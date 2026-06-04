@@ -1,0 +1,68 @@
+{
+  "toolbarTitle": "Feeding Mode",
+  "items": [
+    {
+      "key": "jelly",
+      "label": "jelly",
+      "imgSrc": "food1.png",
+      "liked": true,
+      "w": 100,
+      "h": 100,
+      "type": "normal"
+    },
+    {
+      "key": "bittergummybear",
+      "label": "bittergummybear",
+      "imgSrc": "food2.png",
+      "liked": false,
+      "w": 100,
+      "h": 100,
+      "type": "normal"
+    },
+    {
+      "key": "pinkgummybear",
+      "label": "pinkgummybear",
+      "imgSrc": "food3.png",
+      "liked": true,
+      "w": 100,
+      "h": 100,
+      "type": "normal"
+    },
+    {
+      "key": "yellowgummybear",
+      "label": "yellowgummybear",
+      "imgSrc": "food4.png",
+      "liked": true,
+      "w": 100,
+      "h": 100,
+      "type": "normal"
+    },
+    {
+      "key": "icegummybear",
+      "label": "icegummybear",
+      "imgSrc": "food5.png",
+      "liked": true,
+      "w": 120,
+      "h": 120,
+      "type": "ice"
+    },
+    {
+      "key": "giantgummybear",
+      "label": "giantgummybear",
+      "imgSrc": "food6.png",
+      "liked": true,
+      "w": 500,
+      "h": 500,
+      "type": "normal"
+    },
+    {
+      "key": "rainbowgummybear",
+      "label": "rainbowgummybear",
+      "imgSrc": "food7.png",
+      "liked": true,
+      "w": 120,
+      "h": 150,
+      "type": "normal"
+    }
+  ]
+}

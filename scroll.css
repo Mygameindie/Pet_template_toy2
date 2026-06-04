@@ -1,0 +1,135 @@
+/* ===========================================================
+   UNIVERSAL SCROLL BAR STYLE — pinned to bottom of viewport
+   =========================================================== */
+
+.combined-scroll-bar,
+#presetScrollBar,
+#categoryScrollBar,
+.scrollable-buttons {
+	display: flex;
+	overflow-x: auto;
+	white-space: nowrap;
+	gap: 8px;
+	padding: 1px;
+	width: 90%;
+	max-width: 600px;
+	border: 2px solid #ccc;
+	border-radius: 10px;
+	background: rgba(255, 255, 255, 0.95);
+	scroll-behavior: smooth;
+	cursor: grab;
+	box-sizing: border-box;
+
+	/* anchor to top of viewport so it doesn't overlap mode menu */
+	position: fixed !important;
+	inset: auto !important;
+	left: 50% !important;
+	transform: translateX(-50%) !important;
+	top: 10px !important;
+	bottom: auto !important;
+	z-index: 9000 !important;
+	pointer-events: auto !important;
+}
+
+/* 🔹 Stack multiple bars tightly */
+.combined-scroll-bar + .combined-scroll-bar,
+#presetScrollBar + #categoryScrollBar,
+#categoryScrollBar + .scrollable-buttons {
+	margin-top: 6px;
+	margin-bottom: 0;
+}
+
+/* Hide scrollbars */
+.combined-scroll-bar::-webkit-scrollbar,
+#presetScrollBar::-webkit-scrollbar,
+#categoryScrollBar::-webkit-scrollbar,
+.scrollable-buttons::-webkit-scrollbar {
+	display: none;
+}
+
+/* === BUTTONS INSIDE === */
+.combined-scroll-bar button,
+#presetScrollBar button,
+#categoryScrollBar button,
+.scrollable-buttons button {
+	flex: 0 0 auto;
+	margin: 5px;
+	padding: 1px 15px;
+	font-size: 14px;
+	cursor: pointer;
+	border: none;
+	background-color: #6200ea;
+	color: #fff;
+	border-radius: 6px;
+	transition: background 0.3s, transform 0.15s ease;
+}
+
+.combined-scroll-bar button:hover,
+#presetScrollBar button:hover,
+#categoryScrollBar button:hover,
+.scrollable-buttons button:hover {
+	background-color: #3700b3;
+	transform: scale(1.05);
+}
+
+/* Grabbing effect */
+.combined-scroll-bar:active,
+#presetScrollBar:active,
+#categoryScrollBar:active,
+.scrollable-buttons:active {
+	cursor: grabbing;
+}
+
+/* === MOBILE SAFE === */
+@media (max-width: 600px) {
+	.combined-scroll-bar,
+	#presetScrollBar,
+	#categoryScrollBar,
+	.scrollable-buttons {
+		width: 95%;
+		max-width: 100vw;
+		padding: 6px;
+		gap: 5px;
+		top: 8px;
+		bottom: auto;
+	}
+}
+
+/* ===========================================================
+   OVERRIDE for elements inside #ui (escapes transform)
+   =========================================================== */
+#ui .combined-scroll-bar,
+#ui #presetScrollBar,
+#ui #categoryScrollBar,
+#ui .scrollable-buttons {
+	position: fixed !important;
+	inset: auto !important;
+	left: 50% !important;
+	transform: translateX(-50%) !important;
+	top: 10px !important;
+	bottom: auto !important;
+	z-index: 9000 !important;
+	pointer-events: auto !important;
+}
+
+/* Slight stacking for multiple bars in #ui */
+#ui .combined-scroll-bar + .combined-scroll-bar,
+#ui #presetScrollBar + #categoryScrollBar,
+#ui #categoryScrollBar + .scrollable-buttons {
+	margin-top: 6px !important;
+	top: calc(10px + 50px) !important;
+	bottom: auto !important;
+}
+
+/* 📱 Mobile safe adjustment */
+@media (max-width: 600px) {
+	#ui .combined-scroll-bar,
+	#ui #presetScrollBar,
+	#ui #categoryScrollBar,
+	#ui .scrollable-buttons {
+		top: 8px !important;
+		bottom: auto !important;
+		width: 95% !important;
+		max-width: 100vw !important;
+	}
+}
