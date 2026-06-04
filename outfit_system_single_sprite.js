@@ -214,13 +214,20 @@
   }
   function applyDressRules(p, category, id) {
     if (id === 0 || id === "0") return;
-    if (category === "dress") {
-      window.selectedClothes[p].top = 0;
-      window.selectedClothes[p].bottom = 0;
+    const sc = window.selectedClothes[p];
+    // Full-body garments (dress, bodysuit) replace the separate top + bottom,
+    // and replace each other (you can't wear a dress and a bodysuit at once).
+    if (category === "dress" || category === "bodysuit") {
+      sc.top = 0;
+      sc.bottom = 0;
+      sc.dress = (category === "dress") ? sc.dress : 0;
+      sc.bodysuit = (category === "bodysuit") ? sc.bodysuit : 0;
       return;
     }
+    // Putting on a separate top/bottom removes any full-body garment.
     if (category === "top" || category === "bottom") {
-      window.selectedClothes[p].dress = 0;
+      sc.dress = 0;
+      sc.bodysuit = 0;
     }
   }
   function applyClothingRules(p, category, id) {
