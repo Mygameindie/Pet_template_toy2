@@ -61,20 +61,18 @@ window.OUTFIT_CONFIG = {
   },
 
   // -------------------------------------------------------------------------
-  // PET 2 — character 2's wardrobe. Same categories and same wardrobe SYSTEM
-  // as pet1, but the art uses the "_2" suffix (e.g. "top1_2") so character 2
-  // can have its own clothing images. Drop the matching PNGs in images/.
+  // PET 2 — character 2 is a BOY. Boy clothing rules: no top underwear, no
+  // one-piece underwear, no dress, no skirt, no bunnysuit bow. He wears boxers
+  // and pants instead. Art uses the "_2" suffix (e.g. "top1_2"); drop the
+  // matching PNGs in images/. (Any category omitted here is hidden from his
+  // Dress Up panel.)
   // -------------------------------------------------------------------------
   pet2: {
-    topUnderwear:      ["topunderwear1_2", "topunderwear2_2", "topunderwear3_2", "topunderwear4_2"],
-    bottomUnderwear:   ["bottomunderwear1_2", "bottomunderwear2_2", "bottomunderwear3_2", "bottomunderwear4_2"],
-    onepieceUnderwear: ["onepieceunderwear1_2"],
+    bottomUnderwear:   ["bottomunderwear1_2", "boxers1_2"],
     top:               ["top1_2"],
-    bottom:            ["pants1_2", "skirt1_2"],
-    dress:             ["dress1_2"],
+    bottom:            ["pants1_2"],
     shoes:             ["shoes1_2"],
     glove:             ["glove1_2"],
-    bunnysuitbow:      ["bunnysuitbow1_2"],
     glasses:           ["glasses1_2"],
     ears:              ["ears1_2"],
     hat:               ["hat1_2"],
@@ -89,11 +87,10 @@ window.OUTFIT_CONFIG = {
       bunnysuitbow: "bunnysuitbow1",
     },
     pet2: {
-      onepieceUnderwear: "onepieceunderwear1_2",
+      bottomUnderwear: "boxers1_2",
       glove: "glove1_2",
       shoes: "shoes1_2",
       ears: "ears1_2",
-      bunnysuitbow: "bunnysuitbow1_2",
     },
   },
 };

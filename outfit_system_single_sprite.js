@@ -148,9 +148,15 @@
     return PETS.includes(p) ? p : 0;
   }
 
+  // Only show categories this character actually owns clothes for. This is what
+  // enforces the boy clothing rules: character 2 (boy) has no top underwear,
+  // one-piece, dress, or bunnysuit-bow items, so those tabs never appear.
   function catKeys(p = activePet()) {
     const catalog = window.dressUpCatalog[p] || window.dressUpCatalog[0] || {};
-    return cats.map(c => c.key).filter(k => !!catalog[k]);
+    return cats.map(c => c.key).filter(k => {
+      const cat = catalog[k];
+      return cat && Object.keys(cat.items || {}).length > 1; // more than just "None"
+    });
   }
 
   function normalizeState() {
