@@ -18,6 +18,12 @@
 //  (top1 -> also bottom1). Once you're already in separates you can mix any
 //  top with any bottom (top1 + bottom2) — they are not re-paired.
 //
+//  WIND (troll blower): skirt-like clothes (dresses + anything with "skirt"
+//  in its name) can have a blown-up variant:  images/<name>_w.png
+//  (e.g. skirt1.png -> skirt1_w.png, dress1.png -> dress1_w.png). While the
+//  troll-mode blower is held under the garment it swaps to the _w art; if the
+//  _w image doesn't exist the garment just stays on its normal art.
+//
 //  This is a plain JS file (no network/JSON loading) so it can't glitch or
 //  fail to load mid-game — it's the smoothest, simplest setup.
 // ===========================================================
@@ -94,7 +100,7 @@ window.OUTFIT_CONFIG = {
       bottomUnderwear: "boxers1_2",
       glove: "glove1_2",
       shoes: "shoes1_2",
-      ears: "ears1_2",
+      hat: "hat1_2",
     },
   },
 };
