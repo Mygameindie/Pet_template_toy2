@@ -13,6 +13,13 @@
 //    Want a custom name? Use an object instead of a string:
 //        { id: "top2", label: "Cool Hoodie" }
 //
+//  CHARACTERS CAN HAVE DIFFERENT CLOTHES. Each character only shows the
+//  categories/items it actually has: if a category is missing from pet2's
+//  list below — or an item's PNG doesn't exist in images/ — that item (or the
+//  whole tab) is hidden for that character automatically. So if character 1
+//  has a hat but character 2 doesn't, that's fine: character 2 just won't
+//  show a Hat tab, and presets that include a hat simply skip it for him.
+//
 //  UNDERWEAR: a one-piece is a complete set and replaces the separate top +
 //  bottom. Switching OFF a one-piece to a separate piece completes the set
 //  (top1 -> also bottom1). Once you're already in separates you can mix any

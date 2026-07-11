@@ -77,16 +77,19 @@ window.OUTFIT_PRESETS = [
 
   // Presets list pet1's item ids (e.g. "top1"). Character 2's wardrobe uses the
   // "_2" suffix ("top1_2"), so translate each id to the one that actually
-  // exists in the target character's catalog. Falls back to the literal id.
+  // exists in the target character's catalog. An item whose art is missing for
+  // this character (e.g. no hat PNG for character 2) resolves to 0 (None), so
+  // the same preset works on both characters — each just wears what it has.
   function resolveItemForPet(p, category, id) {
     if (id === 0 || id === "0" || id == null) return 0;
     const items = (window.dressUpCatalog && window.dressUpCatalog[p] &&
       window.dressUpCatalog[p][category] && window.dressUpCatalog[p][category].items) || null;
     if (!items) return id;
-    if (items[id]) return id;
-    if (items[id + "_2"]) return id + "_2";
+    const ok = key => !!(items[key] && (!items[key].img || !items[key].img._failed));
+    if (ok(id)) return id;
+    if (ok(id + "_2")) return id + "_2";
     const stripped = String(id).replace(/_2$/, "");
-    if (items[stripped]) return stripped;
+    if (ok(stripped)) return stripped;
     return 0;
   }
 
