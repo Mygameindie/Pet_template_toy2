@@ -20,8 +20,23 @@
 //      clothes: { top: "top1", bottom: "pants1", shoes: "shoes1" },
 //      colors:  { top: "Blue", bottom: "Green" } }
 //
-//  NOTE: presets only use item ids that exist in outfit_config.js. If you add
-//  new clothes there, you can reference them here right away.
+//  DIFFERENT OUTFIT PER CHARACTER: the two characters don't wear the same
+//  things (character 1 is a girl, character 2 is a boy — he has no dress or
+//  skirt). Give a preset a `pet2` (or `pet1`) block to say what THAT
+//  character wears for this look; the top-level clothes/colors are used for
+//  everyone else. Example — girl wears a dress, boy wears top + pants:
+//
+//    { name: "Party", emoji: "🎀",
+//      clothes: { dress: "dress1", shoes: "shoes1" },        // character 1
+//      colors:  { dress: "Red" },
+//      pet2: {                                               // character 2
+//        clothes: { top: "top1", bottom: "pants1", shoes: "shoes1" },
+//        colors:  { top: "Red" },
+//      } }
+//
+//  You can write ids either way ("top1" or "top1_2") — they are translated
+//  to the id that exists for the character being dressed, and anything the
+//  character doesn't have (no item / missing PNG) is simply skipped.
 // ===========================================================
 
 window.OUTFIT_PRESETS = [
@@ -36,23 +51,42 @@ window.OUTFIT_PRESETS = [
     emoji: "🌸",
     clothes: { top: "top1", bottom: "skirt1", shoes: "shoes1", hat: "hat1" },
     colors:  { top: "Pink", bottom: "Purple" },
+    // Boy version: no skirt — same look with pants.
+    pet2: {
+      clothes: { top: "top1", bottom: "pants1", shoes: "shoes1", hat: "hat1" },
+      colors:  { top: "Pink", bottom: "Purple" },
+    },
   },
   {
     name: "Party Dress",
     emoji: "🎀",
     clothes: { dress: "dress1", shoes: "shoes1", hat: "hat1" },
     colors:  { dress: "Red", hat: "Yellow" },
+    // Boy version: no dress — a red top + pants instead.
+    pet2: {
+      clothes: { top: "top1", bottom: "pants1", shoes: "shoes1", hat: "hat1" },
+      colors:  { top: "Red", hat: "Yellow" },
+    },
   },
   {
     name: "Comfy",
     emoji: "🩲",
     clothes: { topUnderwear: "topunderwear1", bottomUnderwear: "bottomunderwear1" },
+    // Boy version: just boxers.
+    pet2: {
+      clothes: { bottomUnderwear: "boxers1" },
+    },
   },
   {
     name: "Swimsuit",
     emoji: "🩱",
     clothes: { onepieceUnderwear: "onepieceunderwear1" },
     colors:  { onepieceUnderwear: "Cyan" },
+    // Boy version: no one-piece — swim in boxers.
+    pet2: {
+      clothes: { bottomUnderwear: "boxers1" },
+      colors:  { bottomUnderwear: "Cyan" },
+    },
   },
   {
     name: "Birthday Suit",
@@ -93,6 +127,21 @@ window.OUTFIT_PRESETS = [
     return 0;
   }
 
+  // A preset can define a different look per character: a `pet1`/`pet2` block
+  // ({ clothes, colors }) wins for that character; otherwise the preset's
+  // top-level clothes/colors are used. This is how the girl can wear a dress
+  // while the boy wears a top + pants for the same preset.
+  function outfitForPet(preset, p) {
+    const per = preset["pet" + (p + 1)];
+    // A per-character clothes list is a complete look of its own, so it does
+    // NOT inherit the other look's colors (those may belong to garments this
+    // character isn't wearing) — omit colors and you get Original.
+    if (per && per.clothes) return { clothes: per.clothes, colors: per.colors || {} };
+    // Colors-only override: same clothes, different colors for this character.
+    if (per && per.colors) return { clothes: preset.clothes || {}, colors: per.colors };
+    return { clothes: preset.clothes || {}, colors: preset.colors || {} };
+  }
+
   // Apply a full preset to the active character. Every category not named by
   // the preset is cleared, so a preset always defines the complete look.
   function applyPreset(preset) {
@@ -105,8 +154,7 @@ window.OUTFIT_PRESETS = [
     const sel = (window.selectedClothes[p] = window.selectedClothes[p] || {});
     const col = (window.clothingColors[p] = window.clothingColors[p] || {});
 
-    const clothes = preset.clothes || {};
-    const colors = preset.colors || {};
+    const { clothes, colors } = outfitForPet(preset, p);
 
     categoryKeys().forEach(k => {
       sel[k] = (clothes[k] != null) ? resolveItemForPet(p, k, clothes[k]) : 0;
