@@ -65,6 +65,13 @@
     };
   }
 
+  // Each numbered toy only works on its matching pet: toy_1 -> pet 1,
+  // toy_2 -> pet 2, etc. A toy without a number in its id can touch any pet.
+  function allowedPetFor(toy) {
+    const m = String(toy.dataset.toyKind || '').match(/(\d+)\s*$/);
+    return m ? Number(m[1]) - 1 : -1; // -1 = any pet
+  }
+
   function petHitIndex(toy) {
     const pose = typeof window.getPetPose === 'function' ? window.getPetPose() : null;
     if (!pose || !Array.isArray(pose.pets)) return -1;
@@ -78,7 +85,9 @@
     const tt = r.top - canvasRect.top;
     const tb = r.bottom - canvasRect.top;
 
+    const allowed = allowedPetFor(toy);
     for (let i = pose.pets.length - 1; i >= 0; i--) {
+      if (allowed >= 0 && i !== allowed) continue;
       const b = bellyBox(pose.pets[i]);
       const overlapping = !(tr < b.left || tl > b.right || tb < b.top || tt > b.bottom);
       if (overlapping) return i;
@@ -265,6 +274,7 @@
     toy.alt = item.alt || item.id || 'toy';
     toy.draggable = false;
     toy.dataset.toyId = String(++toyIdCounter);
+    toy.dataset.toyKind = String(item.id || '');
     toy.style.left = `${r.left + r.width * (0.20 + Math.random() * 0.45)}px`;
     toy.style.top = `${r.top + r.height * (0.15 + Math.random() * 0.35)}px`;
 

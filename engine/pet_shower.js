@@ -1,10 +1,9 @@
 // ===========================================================
 // 🧼 SHOWER MODE (No Toolbar Version)
-// ✅ 2 PET (pet1 / pet2)
-// ✅ pet1 base: base.png / base_bath2.png
-// ✅ pet2 base: base_2.png / base_2_bath2.png
-// ✅ LAYER ORDER (ONE BIG POOL covering BOTH):
-//    pool2 (bottom, one big) -> both bases (middle) -> sponge -> pool1 (top, one big)
+// ✅ Pets come from game_config.js
+// ✅ per-pet base: base.png / base_bath2.png (+ artSuffix, e.g. base_2.png / base_2_bath2.png)
+// ✅ LAYER ORDER (ONE BIG POOL covering ALL PETS):
+//    pool2 (bottom, one big) -> bases (middle) -> sponge -> pool1 (top, one big)
 // ===========================================================
 
 (() => {
@@ -51,23 +50,24 @@
   // Bath Bases (Per Pet)
   // ==============================
 
-  const baseSets = [
-    { bath1: new Image(), bath2: new Image() }, // pet1
-    { bath1: new Image(), bath2: new Image() }, // pet2
-  ];
+  // Characters come from game_config.js (count, art suffix, position).
+  // Bath art per pet: base.png / base_bath2.png plus the pet's artSuffix
+  // (e.g. base_2.png / base_2_bath2.png).
+  const PET_CFG = (window.GAME_CONFIG && Array.isArray(window.GAME_CONFIG.pets) && window.GAME_CONFIG.pets.length)
+    ? window.GAME_CONFIG.pets
+    : [{ artSuffix: "", xFrac: 0.5 }];
 
-  // pet1
-  baseSets[0].bath1.src = "base.png";
-  baseSets[0].bath2.src = "base_bath2.png";
+  const baseSets = PET_CFG.map(c => {
+    const sfx = c.artSuffix || "";
+    const set = { bath1: new Image(), bath2: new Image() };
+    set.bath1.src = `base${sfx}.png`;
+    set.bath2.src = `base${sfx}_bath2.png`;
+    return set;
+  });
 
-  // pet2
-  baseSets[1].bath1.src = "base_2.png";
-  baseSets[1].bath2.src = "base_2_bath2.png";
-
-  const baths = [
-    { currentBaseKey: "bath1", lastDrawnBaseKey: "bath1", wasTouching: false, x: 0, y: 0, w: 0, h: 0 },
-    { currentBaseKey: "bath1", lastDrawnBaseKey: "bath1", wasTouching: false, x: 0, y: 0, w: 0, h: 0 },
-  ];
+  const baths = PET_CFG.map(() => (
+    { currentBaseKey: "bath1", lastDrawnBaseKey: "bath1", wasTouching: false, x: 0, y: 0, w: 0, h: 0 }
+  ));
 
   // ==============================
   // Pool overlays (ONE BIG pool covering BOTH)
@@ -190,11 +190,12 @@
     const scaledH = 450;
     const scaledW = window.PetArt ? window.PetArt.widthForHeight(scaledH) : 400;
 
-    const leftX = canvas.width * 0.35 - scaledW / 2;
-    const rightX = canvas.width * 0.65 - scaledW / 2;
     const groundedY = groundY - scaledH;
 
-    const positions = [leftX, rightX];
+    const positions = PET_CFG.map((c, i) => {
+      const xFrac = (c.xFrac != null) ? c.xFrac : (i + 1) / (PET_CFG.length + 1);
+      return canvas.width * xFrac - scaledW / 2;
+    });
 
     // Update bath rects
     for (let i = 0; i < baths.length; i++) {
@@ -204,10 +205,10 @@
       baths[i].h = scaledH;
     }
 
-    // ONE big pool rect covering both baths
-    const poolX = leftX;
+    // ONE big pool rect covering every bath
+    const poolX = Math.min(...positions);
     const poolY = groundedY;
-    const poolW = (rightX - leftX) + scaledW; // covers left bath to right bath
+    const poolW = (Math.max(...positions) - poolX) + scaledW; // covers left-most to right-most bath
     const poolH = scaledH;
 
     // helper: draw base with fallback

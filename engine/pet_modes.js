@@ -71,7 +71,8 @@ if (!window.SoundManager) {
     scripts.forEach(path => {
 
       const s = document.createElement('script');
-      s.src = path + '?v=' + Date.now(); // cache bust
+      // Mode scripts live in the shared engine/ folder.
+      s.src = 'engine/' + path + '?v=' + Date.now(); // cache bust
       s.defer = true;
 
       s.onload = () => {

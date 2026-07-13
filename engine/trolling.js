@@ -2,7 +2,9 @@
 // 😈 TROLL MODE
 // Hammer: click hammer button -> tap pet -> synced impact.
 // Spray: click spray button -> drag/move spray bottle near pet -> click/tap to spray.
-// Both tools use the disgust face and reduce happiness through PetStats.troll().
+// Blower: click blower button -> drag it under a skirt/dress -> wind blows the
+//         clothing up (the garment swaps to its <name>_w.png art while blown).
+// All tools use the disgust face and reduce happiness through PetStats.troll().
 // ===========================================================
 
 (() => {
@@ -25,17 +27,21 @@
     return img;
   }
 
-  // Optional 2 art naming:
-  //   base_2.png, base_disgust_2.png
-  const baseSets = [
-    { normal: createImg("base.png"), hurt: createImg("base_disgust.png") },
-    { normal: createImg("base_2.png"), hurt: createImg("base_disgust_2.png") },
-  ];
+  // Characters come from game_config.js (count, art suffix, position, tint).
+  // Per-pet art: base.png / base_disgust.png plus the pet's artSuffix
+  // (e.g. base_2.png / base_disgust_2.png). Missing art falls back to pet1 + tint.
+  const PET_CFG = (window.GAME_CONFIG && Array.isArray(window.GAME_CONFIG.pets) && window.GAME_CONFIG.pets.length)
+    ? window.GAME_CONFIG.pets
+    : [{ artSuffix: "", xFrac: 0.5, drawFilter: "none" }];
 
-  const pets = [
-    { x: 0, y: 0, w: 400, h: 450, hurtUntil: 0, recoilUntil: 0, drawFilter: "none" },
-    { x: 0, y: 0, w: 400, h: 450, hurtUntil: 0, recoilUntil: 0, drawFilter: "hue-rotate(140deg) saturate(1.2)" },
-  ];
+  const baseSets = PET_CFG.map(c => {
+    const sfx = c.artSuffix || "";
+    return { normal: createImg(`base${sfx}.png`), hurt: createImg(`base_disgust${sfx}.png`) };
+  });
+
+  const pets = PET_CFG.map(c => (
+    { x: 0, y: 0, w: 400, h: 450, hurtUntil: 0, recoilUntil: 0, wind: 0, nextWindTrollAt: 0, drawFilter: c.drawFilter || "none" }
+  ));
 
   // Match the main screen: derive width from the base image's real aspect ratio.
   function syncPetWidths() {
@@ -49,9 +55,12 @@
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     groundY = canvas.height - groundHeight;
-    pets[0].x = canvas.width * 0.35 - pets[0].w / 2;
-    pets[1].x = canvas.width * 0.65 - pets[1].w / 2;
-    pets.forEach(p => { p.y = groundY - 500; });
+    pets.forEach((p, i) => {
+      const c = PET_CFG[i] || {};
+      const xFrac = (c.xFrac != null) ? c.xFrac : (i + 1) / (PET_CFG.length + 1);
+      p.x = canvas.width * xFrac - p.w / 2;
+      p.y = groundY - 500;
+    });
   }
   window.addEventListener("resize", resizeCanvas);
   resizeCanvas();
@@ -98,6 +107,7 @@
   trollBar.innerHTML = `
     <button id="hammer-btn" title="Arm hammer, then tap the pet">🔨 Hammer</button>
     <button id="spray-btn" title="Drag spray near a pet, then tap to spray">🧴 Spray</button>
+    <button id="blower-btn" title="Drag the blower under a skirt or dress">💨 Blower</button>
     <button id="remove-btn" title="Clear tool & reset face">❌ Remove</button>
   `;
   document.body.appendChild(trollBar);
@@ -125,6 +135,12 @@
   sprayMist.textContent = "💦";
   sprayMist.style.display = "none";
   document.body.appendChild(sprayMist);
+
+  const blowerCursor = document.createElement("div");
+  blowerCursor.id = "blower-cursor";
+  blowerCursor.textContent = "🌬️";
+  blowerCursor.style.display = "none";
+  document.body.appendChild(blowerCursor);
 
   const sprayImg = sprayCursor.querySelector("img");
   const sprayFallback = sprayCursor.querySelector("span");
@@ -223,6 +239,34 @@
       35%{ opacity:1; transform: translate(32px,-48px) scale(1); }
       100%{ opacity:0; transform: translate(70px,-62px) scale(1.25); }
     }
+    #blower-cursor{
+      position:fixed;
+      left:0; top:0;
+      transform: translate(-50%,-50%);
+      font-size:52px;
+      pointer-events:none;
+      user-select:none;
+      z-index:1000;
+      filter: drop-shadow(0 3px 4px rgba(0,0,0,.25));
+    }
+    #blower-cursor.blowing{
+      animation: blowerBuzz .25s ease-in-out infinite;
+    }
+    @keyframes blowerBuzz{
+      0%,100%{ transform: translate(-50%,-50%) scale(1); }
+      50%{ transform: translate(-49%,-52%) scale(1.08); }
+    }
+    .wind-gust{
+      position:fixed;
+      pointer-events:none;
+      z-index:1001;
+      font-size:26px;
+      animation: windGustUp .6s ease-out forwards;
+    }
+    @keyframes windGustUp{
+      0%{ opacity:.9; transform: translate(-50%,-50%) scale(.6); }
+      100%{ opacity:0; transform: translate(-50%,-160px) scale(1.3); }
+    }
     #troll-bar button.active{ outline: 2px solid rgba(255,255,255,.65); }
   `;
   document.head.appendChild(style);
@@ -231,20 +275,27 @@
   let isSwinging = false;
   let isSpraying = false;
   let lastPointer = { clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 };
+  let lastCanvasPoint = null;
 
   const hammerBtn = document.getElementById("hammer-btn");
   const sprayBtn = document.getElementById("spray-btn");
+  const blowerBtn = document.getElementById("blower-btn");
   const removeBtn = document.getElementById("remove-btn");
 
   function setActiveTool(tool) {
     activeTool = activeTool === tool ? null : tool;
     hammerBtn.classList.toggle("active", activeTool === "hammer");
     sprayBtn.classList.toggle("active", activeTool === "spray");
+    blowerBtn.classList.toggle("active", activeTool === "blower");
     hammerCursor.style.display = "none";
     sprayCursor.style.display = activeTool === "spray" ? "block" : "none";
+    blowerCursor.style.display = activeTool === "blower" ? "block" : "none";
     if (activeTool === "spray") {
       setSprayImage(false);
       moveSprayCursor(lastPointer.clientX, lastPointer.clientY);
+    }
+    if (activeTool === "blower") {
+      moveBlowerCursor(lastPointer.clientX, lastPointer.clientY);
     }
   }
 
@@ -255,27 +306,36 @@
     sprayCursor.style.top = clientY + "px";
   }
 
+  function moveBlowerCursor(clientX, clientY) {
+    lastPointer = { clientX, clientY };
+    if (activeTool !== "blower") return;
+    blowerCursor.style.left = clientX + "px";
+    blowerCursor.style.top = clientY + "px";
+  }
+
   hammerBtn.addEventListener("click", () => setActiveTool("hammer"));
   sprayBtn.addEventListener("click", () => setActiveTool("spray"));
+  blowerBtn.addEventListener("click", () => setActiveTool("blower"));
 
   removeBtn.addEventListener("click", () => {
     activeTool = null;
     hammerBtn.classList.remove("active");
     sprayBtn.classList.remove("active");
+    blowerBtn.classList.remove("active");
     hammerCursor.style.display = "none";
     sprayCursor.style.display = "none";
+    blowerCursor.style.display = "none";
+    blowerCursor.classList.remove("blowing");
     sprayMist.style.display = "none";
     setSprayImage(false);
-    pets.forEach(p => { p.hurtUntil = 0; p.recoilUntil = 0; });
+    pets.forEach(p => { p.hurtUntil = 0; p.recoilUntil = 0; p.wind = 0; });
+    if (window.ClothWind) window.ClothWind.reset();
   });
 
   // ===========================================================
   // 🎯 Pixel-perfect hit test (opaque pixels only)
   // ===========================================================
-  const alphaMasks = [
-    { data: null, w: 0, h: 0 },
-    { data: null, w: 0, h: 0 },
-  ];
+  const alphaMasks = PET_CFG.map(() => ({ data: null, w: 0, h: 0 }));
   const ALPHA_THRESHOLD = 10;
 
   function rebuildAlphaMask(img, idx) {
@@ -419,15 +479,71 @@
     }, 460);
   }
 
+  // ===========================================================
+  // 💨 BLOWER — hold it under a skirt or dress to blow it up
+  // ===========================================================
+  function wearsSkirtLike(i) {
+    const sc = window.selectedClothes && window.selectedClothes[i];
+    if (!sc) return false;
+    if (sc.dress && sc.dress !== "0") return true;
+    return Object.values(sc).some(v => /skirt/i.test(String(v)));
+  }
+
+  // Under-skirt zone: roughly below the waist, down to just past the feet.
+  function inBlowZone(pt, pet) {
+    return pt.x >= pet.x + pet.w * 0.12 &&
+           pt.x <= pet.x + pet.w * 0.88 &&
+           pt.y >= pet.y + pet.h * 0.5 &&
+           pt.y <= pet.y + pet.h + 70;
+  }
+
+  let lastGustAt = 0;
+  function spawnGust(clientX, clientY) {
+    const g = document.createElement("div");
+    g.className = "wind-gust";
+    g.textContent = "💨";
+    g.style.left = (clientX + (Math.random() * 36 - 18)) + "px";
+    g.style.top = (clientY - 10 - Math.random() * 14) + "px";
+    document.body.appendChild(g);
+    setTimeout(() => g.remove(), 650);
+  }
+
+  function updateWind(now) {
+    const blowing = activeTool === "blower" && !!lastCanvasPoint;
+    blowerCursor.classList.toggle("blowing", blowing);
+    if (blowing && now - lastGustAt > 130) {
+      lastGustAt = now;
+      spawnGust(lastPointer.clientX, lastPointer.clientY);
+    }
+    pets.forEach((pet, i) => {
+      pet.wind = (blowing && inBlowZone(lastCanvasPoint, pet) && wearsSkirtLike(i)) ? 1 : 0;
+      if (window.ClothWind) window.ClothWind.set(i, pet.wind);
+      // The pet is not amused: brief disgust + a troll stat hit while blown.
+      if (pet.wind && now > (pet.nextWindTrollAt || 0)) {
+        pet.nextWindTrollAt = now + 1500;
+        disgustPet(i, 0, 900);
+      }
+    });
+  }
+
   function onPointerMove(e) {
     const p = getCanvasPoint(e);
+    lastCanvasPoint = { x: p.x, y: p.y };
     moveSprayCursor(p.clientX, p.clientY);
+    moveBlowerCursor(p.clientX, p.clientY);
   }
 
   function onCanvasDown(e) {
     if (!activeTool) return;
     const p = getCanvasPoint(e);
+    lastCanvasPoint = { x: p.x, y: p.y };
     let hitIdx = -1;
+
+    if (activeTool === "blower") {
+      e.preventDefault();
+      moveBlowerCursor(p.clientX, p.clientY);
+      return;
+    }
 
     if (activeTool === "hammer") {
       hitIdx = getTargetPet(p, false);
@@ -460,6 +576,7 @@
     ctx.fillRect(0, groundY, canvas.width, groundHeight);
 
     const now = Date.now();
+    updateWind(now);
     for (let i = 0; i < pets.length; i++) {
       const pet = pets[i];
       const recoil = (pet.recoilUntil && now < pet.recoilUntil) ? 10 : 0;
@@ -471,7 +588,7 @@
       if (!img || img._failed) {
         set = baseSets[0];
         img = wantHurt ? set.hurt : set.normal;
-        useTintFallback = (i === 1);
+        useTintFallback = (i !== 0);
       }
 
       if (img && !img._failed && img.complete && img.naturalWidth > 0) {
@@ -499,6 +616,9 @@
     hammerCursor?.remove();
     sprayCursor?.remove();
     sprayMist?.remove();
+    blowerCursor?.remove();
+    document.querySelectorAll(".wind-gust").forEach(g => g.remove());
+    if (window.ClothWind) window.ClothWind.reset();
     style?.remove();
     window.removeEventListener("resize", resizeCanvas);
     canvas.removeEventListener("mousemove", onPointerMove);

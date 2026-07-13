@@ -5,8 +5,8 @@
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 	<title>My Pet Game</title>
-	<link rel="stylesheet" href="pet_style.css" />
-	<link rel="stylesheet" href="scroll.css">
+	<link rel="stylesheet" href="engine/pet_style.css" />
+	<link rel="stylesheet" href="engine/scroll.css">
 </head>
 
 <body>
@@ -27,18 +27,21 @@
 		<div id="hint" class="card small"></div>
 	</div>
 
-	<script src="hd_canvas.js"></script>
-	<script src="asset_path_fix.js"></script>
-	<script src="pet_art.js"></script>
-	<script src="mode_manger.js"></script>
+	<!-- game_config.js is PER-GAME and must load before any engine script -->
+	<script src="game_config.js"></script>
+	<script src="engine/hd_canvas.js"></script>
+	<script src="engine/asset_path_fix.js"></script>
+	<script src="engine/pet_art.js"></script>
+	<script src="engine/mode_manger.js"></script>
 	<script src="outfit_config.js"></script>
-	<script src="outfit_system_single_sprite.js"></script>
+	<script src="engine/outfit_system_single_sprite.js"></script>
 	<script src="outfit_presets.js"></script>
-	<script src="pet_stats.js"></script>
-	<script src="pet_modes.js"></script>
-	<script src="canvas_fix.js"></script>
-	<script src="ui_cleanup.js"></script>
-	<script src="pet_toys.js"></script>
+	<script src="engine/outfit_presets_ui.js"></script>
+	<script src="engine/pet_stats.js"></script>
+	<script src="engine/pet_modes.js"></script>
+	<script src="engine/canvas_fix.js"></script>
+	<script src="engine/ui_cleanup.js"></script>
+	<script src="engine/pet_toys.js"></script>
 </body>
 
 </html>

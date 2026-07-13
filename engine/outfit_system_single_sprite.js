@@ -124,11 +124,13 @@
     key: c.key, label: c.label || c.key, z: Number(c.z) || 100,
   }));
 
-  // Both pets share the same dress-up system. Character 2 (index 1) reads its
-  // wardrobe from cfg.pet2 (same structure as pet1, "_2" art).
-  const PETS = [0, 1];
-  const wardrobeFor = p => (p === 1 ? cfg.pet2 : cfg.pet1) || {};
-  const defaultsFor = p => (cfg.defaults && (p === 1 ? cfg.defaults.pet2 : cfg.defaults.pet1)) || {};
+  // Every pet shares the same dress-up system. Pet count comes from
+  // game_config.js; each pet reads its wardrobe from cfg.pet1 / cfg.pet2 / ...
+  // in outfit_config.js (same structure per pet, art suffixed per pet).
+  const NUM_PETS = (window.GAME_CONFIG && Array.isArray(window.GAME_CONFIG.pets) && window.GAME_CONFIG.pets.length) || 1;
+  const PETS = Array.from({ length: NUM_PETS }, (_, i) => i);
+  const wardrobeFor = p => cfg["pet" + (p + 1)] || {};
+  const defaultsFor = p => (cfg.defaults && cfg.defaults["pet" + (p + 1)]) || {};
 
   function buildCatalog() {
     const catalog = {};
@@ -326,6 +328,31 @@
     if (!image || image._failed || !image.complete || !image.naturalWidth) return false;
     ctx.drawImage(image, x, y, w, h);
     return true;
+  }
+
+  // ---- Cloth wind (used by the troll blower) --------------------------------
+  // A mode sets a per-pet wind strength (0..1); while it's above zero,
+  // skirt-like garments (dresses + anything with "skirt" in its id) swap to
+  // their blown-up art: <name>_w.png (e.g. skirt1.png -> skirt1_w.png).
+  // If the _w image is missing, the garment just keeps its normal art.
+  window.ClothWind = window.ClothWind || {
+    _strength: {},
+    set(p, s) { this._strength[p] = Math.max(0, Math.min(1, s || 0)); },
+    get(p) { return this._strength[p] || 0; },
+    reset() { this._strength = {}; },
+  };
+
+  function isSkirtLike(key, id) {
+    return key === "dress" || /skirt/i.test(String(id));
+  }
+
+  // Lazy-load the "_w" wind variant of a garment image (cached on the image).
+  function windVariant(image) {
+    if (!image || !image.src) return null;
+    if (!image._windImg) {
+      image._windImg = img(image.src.replace(/\.png(\?.*)?$/i, "_w.png$1"));
+    }
+    return image._windImg;
   }
 
   // ---- UI: button + panel ---------------------------------------------------
@@ -527,7 +554,12 @@
       const it = catalog[k] && catalog[k].items && catalog[k].items[id];
       if (!it || !it.img || it.img._failed) return;
       const hex = COLORS[(window.clothingColors[p] && window.clothingColors[p][k]) || DEFAULT_COLOR] || null;
-      const drawImg = hex ? tintedImage(it.img, hex) : it.img;
+      let baseImg = it.img;
+      if (window.ClothWind && window.ClothWind.get(p) > 0.02 && isSkirtLike(k, id)) {
+        const wImg = windVariant(it.img);
+        if (wImg && !wImg._failed && wImg.complete && wImg.naturalWidth) baseImg = wImg;
+      }
+      const drawImg = hex ? tintedImage(baseImg, hex) : baseImg;
       if (safeDraw(ctx, drawImg, x, y, w, h)) drew = true;
     });
     return drew;

@@ -39,10 +39,15 @@
     return img;
   }
 
-  const baseSets = [
-    { stand: loadImg('base.png'),   fly0: loadImg('base.png'),   fly1: loadImg('base.png'),   fall: loadImg('base.png') },
-    { stand: loadImg('base_2.png'), fly0: loadImg('base_2.png'), fly1: loadImg('base_2.png'), fall: loadImg('base_2.png') },
-  ];
+  // Characters come from game_config.js (count, art suffix, position, tint).
+  const PET_CFG = (window.GAME_CONFIG && Array.isArray(window.GAME_CONFIG.pets) && window.GAME_CONFIG.pets.length)
+    ? window.GAME_CONFIG.pets
+    : [{ artSuffix: '', xFrac: 0.5, drawFilter: 'none' }];
+
+  const baseSets = PET_CFG.map(c => {
+    const src = `base${c.artSuffix || ''}.png`;
+    return { stand: loadImg(src), fly0: loadImg(src), fly1: loadImg(src), fall: loadImg(src) };
+  });
 
   function safeDraw(img, x, y, w, h) {
     if (!img || img._failed || !img.complete || img.naturalWidth === 0) return;
@@ -71,7 +76,9 @@
     };
   }
 
-  const pets = [makePet(0.3, 0), makePet(0.7, 1)];
+  const pets = PET_CFG.map((c, i) =>
+    makePet((c.xFrac != null) ? c.xFrac : (i + 1) / (PET_CFG.length + 1), i)
+  );
 
   // ==============================
   // Balls
@@ -335,11 +342,11 @@
 
       let set = baseSets[i];
       let img = set[state];
-      const needsTint = i === 1 && (img?._failed || !img?.complete);
+      const needsTint = i !== 0 && (img?._failed || !img?.complete);
       if (needsTint) { set = baseSets[0]; img = set[state]; }
 
       ctx.save();
-      if (needsTint) ctx.filter = 'hue-rotate(140deg) saturate(1.2)';
+      if (needsTint) ctx.filter = PET_CFG[i].drawFilter || 'none';
       safeDraw(img, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H);
       if (typeof window.drawOutfitOverlay === 'function') {
         window.drawOutfitOverlay(ctx, state, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H, i);
