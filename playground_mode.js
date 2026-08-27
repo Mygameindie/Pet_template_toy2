@@ -340,9 +340,17 @@
 
       ctx.save();
       if (needsTint) ctx.filter = 'hue-rotate(140deg) saturate(1.2)';
+      // Body parts behind the pet (wings, tail, long hair) — no-op without the art
+      if (typeof window.drawPetBackLayer === 'function') {
+        window.drawPetBackLayer(ctx, state, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H, i);
+      }
       safeDraw(img, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H);
       if (typeof window.drawOutfitOverlay === 'function') {
         window.drawOutfitOverlay(ctx, state, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H, i);
+      }
+      // Body parts that sit over the body and its clothes
+      if (typeof window.drawPetFrontLayer === 'function') {
+        window.drawPetFrontLayer(ctx, state, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H, i);
       }
       ctx.restore();
     }

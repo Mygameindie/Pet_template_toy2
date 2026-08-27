@@ -371,18 +371,38 @@
       const x = pet.x - pet.w / 2;
       const y = pet.y - pet.h / 2;
 
+      // Worked out before the base is drawn, because the back layer needs the
+      // same tint decision the outfit overlay uses.
+      const set = petMoodSets[i] || petMoodSets[0];
+      const img = (set && set[pet.mood]) || (set && set.normal);
+      const needsTint = (i === 1) && (!img || img._failed);
+      const tint = needsTint ? (pet.drawFilter || "none") : "none";
+
+      // Body parts behind the pet (wings, tail, long hair) — no-op without the art
+      if (typeof window.drawPetBackLayer === "function") {
+        ctx.save();
+        ctx.filter = tint;
+        window.drawPetBackLayer(ctx, "stand", x, y, pet.w, pet.h, i);
+        ctx.restore();
+      }
+
       // Base
       safeDrawPet(i, pet.mood, x, y, pet.w, pet.h);
 
       // Outfit overlay (per pet) — tint along with pet if 2 is using fallback
       // (If you provide real 2 outfit art later, it will render without tint.)
-      const set = petMoodSets[i] || petMoodSets[0];
-      const img = (set && set[pet.mood]) || (set && set.normal);
-      const needsTint = (i === 1) && (!img || img._failed);
       if (window.drawOutfitOverlay) {
         ctx.save();
-        ctx.filter = needsTint ? (pet.drawFilter || "none") : "none";
+        ctx.filter = tint;
         window.drawOutfitOverlay(ctx, "stand", x, y, pet.w, pet.h, i);
+        ctx.restore();
+      }
+
+      // Body parts that sit over the body and its clothes
+      if (typeof window.drawPetFrontLayer === "function") {
+        ctx.save();
+        ctx.filter = tint;
+        window.drawPetFrontLayer(ctx, "stand", x, y, pet.w, pet.h, i);
         ctx.restore();
       }
     });

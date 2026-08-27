@@ -336,6 +336,11 @@
       ctx.save();
       ctx.filter = useTintFallback ? pet.drawFilter : 'none';
 
+      // Body parts behind the pet (wings, tail, long hair) — no-op without the art
+      if (typeof window.drawPetBackLayer === 'function') {
+        window.drawPetBackLayer(ctx, state, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h, i);
+      }
+
       // Base (naked)
       safeDraw(img, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h);
 
@@ -350,6 +355,11 @@
           pet.h,
           i
         );
+      }
+
+      // Body parts that sit over the body and its clothes
+      if (typeof window.drawPetFrontLayer === 'function') {
+        window.drawPetFrontLayer(ctx, state, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h, i);
       }
 
       ctx.restore();

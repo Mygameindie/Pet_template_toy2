@@ -219,7 +219,15 @@
       }
 
       if (imgToDraw && imgToDraw.complete && imgToDraw.naturalWidth > 0) {
+        // Body parts behind the pet (wings, tail, long hair) — no-op without the art. Clothes come off in the shower; wings and tails are body, so they
+        // stay — drawPetBackLayer has no shower check.
+        if (typeof window.drawPetBackLayer === "function") {
+          window.drawPetBackLayer(ctx, key, baths[i].x, baths[i].y, baths[i].w, baths[i].h, i);
+        }
         ctx.drawImage(imgToDraw, baths[i].x, baths[i].y, baths[i].w, baths[i].h);
+        if (typeof window.drawPetFrontLayer === "function") {
+          window.drawPetFrontLayer(ctx, key, baths[i].x, baths[i].y, baths[i].w, baths[i].h, i);
+        }
         baths[i].lastDrawnBaseKey = (imgToDraw === baseSets[i].bath2) ? "bath2" : "bath1";
       }
     }

@@ -169,9 +169,18 @@
     const needsTint = (i === 1 && set.sick._failed && set.normal.src.endsWith('base.png'));
     ctx.save();
     if (needsTint) ctx.filter = 'hue-rotate(140deg) saturate(1.2)';
+    // Body parts behind the pet (wings, tail, long hair) — no-op without the art
+    const backState = (pet.phase === 'healed' || pet.phase === 'sick') ? pet.phase : 'stand';
+    if (typeof window.drawPetBackLayer === 'function') {
+      window.drawPetBackLayer(ctx, backState, petX(i) - PET_W / 2, petY() - PET_H / 2, PET_W, PET_H, i);
+    }
     ctx.drawImage(img, petX(i) - PET_W / 2, petY() - PET_H / 2, PET_W, PET_H);
     if (typeof window.drawOutfitOverlay === 'function') {
       window.drawOutfitOverlay(ctx, 'stand', petX(i) - PET_W / 2, petY() - PET_H / 2, PET_W, PET_H, i);
+    }
+    // Body parts that sit over the body and its clothes
+    if (typeof window.drawPetFrontLayer === 'function') {
+      window.drawPetFrontLayer(ctx, backState, petX(i) - PET_W / 2, petY() - PET_H / 2, PET_W, PET_H, i);
     }
     ctx.restore();
   }

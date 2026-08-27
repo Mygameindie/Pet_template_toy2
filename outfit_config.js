@@ -31,6 +31,19 @@
 //  troll-mode blower is held under the garment it swaps to the _w art; if the
 //  _w image doesn't exist the garment just stays on its normal art.
 //
+//  BACK PIECES (wings / tail / capes): the pet's wings, tail and long hair live
+//  in their own image behind the body (see pet_back_layer.js). A garment that
+//  also needs something back there — a cape, a backpack, the back panel of a
+//  dress a tail comes out of — gets a second file: images/<name>_back.png
+//  (e.g. dress1.png -> dress1_back.png; character 2 is top1_2_back.png). It is
+//  picked up automatically, is tinted with the same colour as the front piece,
+//  and if the file doesn't exist the garment just behaves as it always did.
+//
+//  A garment that COVERS the wings or tail completely (a coat, a bodysuit) can
+//  hide them instead: use an object entry with hidesBack, e.g.
+//        { id: "coat1", hidesBack: true }
+//  Putting hidesBack on a category line below applies it to everything in it.
+//
 //  This is a plain JS file (no network/JSON loading) so it can't glitch or
 //  fail to load mid-game — it's the smoothest, simplest setup.
 // ===========================================================
@@ -42,6 +55,12 @@ window.OUTFIT_CONFIG = {
   // Add a line here to create a brand-new clothing category, then add a
   // matching list under pet1 below.
   // -------------------------------------------------------------------------
+
+  // Where the pet's own back parts (wings, tail) sit among the back-layer
+  // garments, on the same z scale as the categories below. 0 puts them behind
+  // every garment, so a cape hangs over the wings. Raise it above a category's
+  // z to bring the wings out in FRONT of that garment instead.
+  backLayerZ: 0,
 
   categories: [
     { key: "topUnderwear",      label: "Top Underwear",             z: 60  },
