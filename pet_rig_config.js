@@ -216,15 +216,17 @@ window.PET_RIG = {
   //                 much cheaper. 'maxLag' caps the trail in degrees.
   //                 'flap: true' adds a slow flutter while the pet is airborne.
   //
-  // ⚠ IF A BACK PART IS DRAWN INTO base.png. The character that ships with this
-  // app has its hair and cape painted into the base sprite rather than in their
-  // own files. The rig gives every pixel to the bone nearest it, so those pixels
-  // are shared out between the torso and the legs — which is invisible standing
-  // still, and shows as the cape splitting along the legs when the pet is thrown
-  // hard. Moving that artwork into its own PNG here is the fix, and is the whole
-  // reason this list exists: cut the cape out of base.png, save it as
-  // images/hair_back.png (or add your own entry for it), and it becomes a proper
-  // layer that swings on its own instead of being torn between two bones.
+  // ⚠ NEVER PAINT A BACK PART INTO base.png. The rig gives every pixel to the
+  // bone nearest it, so anything spread across several bones at once gets shared
+  // out between them — invisible standing still, and torn apart the moment the
+  // pet is thrown. This character's cape used to be painted into the base sprite
+  // and split along her legs for exactly that reason. It now lives in
+  // images/cape.png and swings as one piece; images/base_original.png is the
+  // untouched sprite the parts came out of, kept for reference.
+  //
+  // The test for whether something needs its own file: if the pet moved an arm,
+  // would this move WITH the arm, or stay put? A sleeve moves with the arm and
+  // belongs in base.png. A cape does not, and needs its own file.
   backParts: [
 
     { id: 'tail', img: 'tail.png', bone: 'pelvis', anchor: { x: 425, y: 862 },
@@ -232,6 +234,9 @@ window.PET_RIG = {
 
     { id: 'ponytail', img: 'ponytail.png', bone: 'head', anchor: { x: 425, y: 430 },
       z: 50, segments: 3, stiffness: 0.22 },
+
+    { id: 'cape', img: 'cape.png', bone: 'torso', anchor: { x: 425, y: 664 },
+      z: 42, lag: 0.18, maxLag: 14 },
 
     { id: 'hairBack', img: 'hair_back.png', bone: 'head', anchor: { x: 425, y: 420 },
       z: 55, lag: 0.14, maxLag: 10 },
@@ -286,14 +291,13 @@ window.PET_RIG = {
     // pixels. This is what stops a hairline gap opening along a joint when a
     // limb turns: the two sides overlap instead of meeting exactly.
     //
-    // Higher here than on the desktop pets on purpose: this character's cape and
-    // hair are painted into base.png rather than living in their own files, so
-    // they get shared out between the torso and the legs and have further to
-    // come apart. Measured on this artwork with every limb swung 25°, the gap
-    // pixels along the joints go 2951 at 0, 2041 at 2, 902 at 6, 313 at 12, and
-    // none of it shows at rest. Moving the cape into its own PNG (see backParts
-    // above) fixes the cause rather than the symptom.
-    cutOverlap: 12,
+    // Was 12 while the cape was still painted into base.png — it was being torn
+    // between the torso and the legs, and the extra overlap was papering over
+    // the gaps. The cape is its own layer now, so this is back to the same 6 the
+    // desktop pets use. Measured on this artwork with every limb swung 25°, the
+    // gap pixels along the joints go 2951 at 0, 2041 at 2, 902 at 6, 313 at 12,
+    // and none of it shows at rest.
+    cutOverlap: 6,
 
     // How much of a chain part's length the first segment covers, versus the
     // ones below it. 1 is even. Below 1 makes the root segment shorter, so the
