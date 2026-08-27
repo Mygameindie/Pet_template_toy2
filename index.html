@@ -30,7 +30,15 @@
 	<script src="hd_canvas.js"></script>
 	<script src="asset_path_fix.js"></script>
 	<script src="pet_art.js"></script>
+
+	<!-- Wings, tail, hair, and the ragdoll they hang off. pet_back_layer.js
+	     decides which PNG is which part; pet_rig.js cuts the sprite into limbs
+	     along the skeleton in pet_rig_config.js; pet_body.js is the one call a
+	     mode makes to draw the pet, ragdoll or flat. -->
 	<script src="pet_back_layer.js"></script>
+	<script src="pet_rig_config.js"></script>
+	<script src="pet_rig.js"></script>
+	<script src="pet_body.js"></script>
 	<script src="mode_manger.js"></script>
 	<script src="outfit_config.js"></script>
 	<script src="outfit_system_single_sprite.js"></script>

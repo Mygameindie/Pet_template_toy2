@@ -452,7 +452,18 @@
   // 🎨 DRAW LOOP
   // ===========================================================
   let running = true;
+  // Seconds since the last frame, for the ragdoll. Measured rather than
+  // assumed: a background tab or a slow frame would otherwise feed the solver a
+  // lie and make the limbs jump.
+  let rigLast = 0, rigDt = 1 / 60;
+  function tickRigClock() {
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    rigDt = rigLast ? Math.min((now - rigLast) / 1000, 0.05) : 1 / 60;
+    rigLast = now;
+  }
+
   function draw() {
+    tickRigClock();
     if (!running) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -477,20 +488,26 @@
       if (img && !img._failed && img.complete && img.naturalWidth > 0) {
         ctx.save();
         ctx.filter = useTintFallback ? (pet.drawFilter || "none") : "none";
-        // Body parts behind the pet (wings, tail, long hair) — no-op without the art
-        if (typeof window.drawPetBackLayer === "function") {
-          window.drawPetBackLayer(ctx, "stand", pet.x, pet.y + recoil, pet.w, pet.h, i);
-        }
 
-        ctx.drawImage(img, pet.x, pet.y + recoil, pet.w, pet.h);
-
-        if (window.drawOutfitOverlay) {
-          window.drawOutfitOverlay(ctx, "stand", pet.x, pet.y + recoil, pet.w, pet.h, i);
-        }
-
-        // Body parts that sit over the body and its clothes
-        if (typeof window.drawPetFrontLayer === "function") {
-          window.drawPetFrontLayer(ctx, "stand", pet.x, pet.y + recoil, pet.w, pet.h, i);
+        // Back parts, body, clothes and front parts in one call. Troll mode
+        // shoves the pet around, so the ragdoll runs and the recoil actually
+        // travels through the body instead of sliding the whole sprite.
+        if (typeof window.drawPetBody === "function") {
+          window.drawPetBody(ctx, "stand", pet.x, pet.y + recoil, pet.w, pet.h, i, {
+            img, dt: rigDt, floorY: groundY,
+            airborne: pet.y + recoil + pet.h < groundY - 1,
+          });
+        } else {
+          if (typeof window.drawPetBackLayer === "function") {
+            window.drawPetBackLayer(ctx, "stand", pet.x, pet.y + recoil, pet.w, pet.h, i);
+          }
+          ctx.drawImage(img, pet.x, pet.y + recoil, pet.w, pet.h);
+          if (window.drawOutfitOverlay) {
+            window.drawOutfitOverlay(ctx, "stand", pet.x, pet.y + recoil, pet.w, pet.h, i);
+          }
+          if (typeof window.drawPetFrontLayer === "function") {
+            window.drawPetFrontLayer(ctx, "stand", pet.x, pet.y + recoil, pet.w, pet.h, i);
+          }
         }
         ctx.restore();
       }
