@@ -579,20 +579,10 @@
         ctx.imageSmoothingQuality = 'high';
         ctx.filter = useFilter;
 
-        // Body parts behind the pet (wings, tail, long hair) — no-op without the art
-        if (typeof window.drawPetBackLayer === 'function') {
-          window.drawPetBackLayer(ctx, 'stand', x, petY, petW, petH, idx);
-        }
-
         ctx.drawImage(img, x, petY, petW, petH);
 
         if (typeof window.drawOutfitOverlay === 'function') {
           window.drawOutfitOverlay(ctx, 'stand', x, petY, petW, petH, idx);
-        }
-
-        // Body parts that sit over the body and its clothes
-        if (typeof window.drawPetFrontLayer === 'function') {
-          window.drawPetFrontLayer(ctx, 'stand', x, petY, petW, petH, idx);
         }
 
         ctx.restore();

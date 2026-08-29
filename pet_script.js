@@ -235,8 +235,7 @@
 
   // === Update ===
   function update() {
-    for (let i = 0; i < pets.length; i++) {
-      const pet = pets[i];
+    for (const pet of pets) {
       if (pet.dragging) continue;
 
       const vx = (pet.x - pet.oldx) * damping;
@@ -267,11 +266,6 @@
           }
         } else {
           pet.vy = 0;
-        }
-        // Hit the floor: fold the ragdoll and let the pose spring push it back
-        // up. The limbs arriving late is the part that reads as the impact.
-        if (typeof window.petBodyKick === 'function') {
-          window.petBodyKick(i, Math.min(1, impactSpeed / 30));
         }
         pet.onGround = true;
       } else {
@@ -313,18 +307,7 @@
     return state;
   }
 
-  // Seconds since the last frame, for the ragdoll. Measured rather than assumed:
-  // a background tab or a slow frame would otherwise feed the solver a lie and
-  // make the limbs jump.
-  let rigLast = 0, rigDt = 1 / 60;
-  function tickRigClock() {
-    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-    rigDt = rigLast ? Math.min((now - rigLast) / 1000, 0.05) : 1 / 60;
-    rigLast = now;
-  }
-
   function drawPet() {
-    tickRigClock();
     pets.forEach((pet, i) => {
       const state = getState(pet);
 
@@ -353,30 +336,20 @@
       ctx.save();
       ctx.filter = useTintFallback ? pet.drawFilter : 'none';
 
-      // Back parts, body, clothes and front parts, in one call. This is a drag
-      // mode, so the ragdoll runs: the limbs, the tail and the wings lag behind
-      // the body as it is thrown about, and settle when it lands. With the rig
-      // off or still loading it draws exactly the four layers it always did.
-      if (typeof window.drawPetBody === 'function') {
-        window.drawPetBody(ctx, state, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h, i, {
-          img,
-          dt: rigDt,
-          floorY: groundY,
-          held: !!pet.dragging,
-          // Off the ground and moving: full ragdoll, and the wings flap.
-          airborne: pet.y + pet.h / 2 < groundY - 1,
-        });
-      } else {
-        if (typeof window.drawPetBackLayer === 'function') {
-          window.drawPetBackLayer(ctx, state, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h, i);
-        }
-        safeDraw(img, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h);
-        if (typeof window.drawOutfitOverlay === 'function') {
-          window.drawOutfitOverlay(ctx, state, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h, i);
-        }
-        if (typeof window.drawPetFrontLayer === 'function') {
-          window.drawPetFrontLayer(ctx, state, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h, i);
-        }
+      // Base (naked)
+      safeDraw(img, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h);
+
+      // Outfit overlay (per pet)
+      if (typeof window.drawOutfitOverlay === 'function') {
+        window.drawOutfitOverlay(
+          ctx,
+          state,
+          pet.x - pet.w / 2,
+          pet.y - pet.h / 2,
+          pet.w,
+          pet.h,
+          i
+        );
       }
 
       ctx.restore();

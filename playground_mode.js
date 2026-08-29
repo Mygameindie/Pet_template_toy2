@@ -278,17 +278,6 @@
   // ==============================
   // Draw
   // ==============================
-
-  // Seconds since the last frame, for the ragdoll. Measured rather than
-  // assumed: a background tab or a slow frame would otherwise feed the solver a
-  // lie and make the limbs jump.
-  let rigLast = 0, rigDt = 1 / 60;
-  function tickRigClock() {
-    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-    rigDt = rigLast ? Math.min((now - rigLast) / 1000, 0.05) : 1 / 60;
-    rigLast = now;
-  }
-
   function drawGround() {
     ctx.fillStyle = '#4ade80';
     ctx.fillRect(0, groundY, canvas.width, 14);
@@ -340,7 +329,6 @@
   }
 
   function drawPets() {
-    tickRigClock();
     for (const pet of pets) {
       const i = pet.idx;
       const state = getPetState(pet);
@@ -352,26 +340,9 @@
 
       ctx.save();
       if (needsTint) ctx.filter = 'hue-rotate(140deg) saturate(1.2)';
-
-      // Back parts, body, clothes and front parts in one call. The pets bounce
-      // around in here, so the ragdoll runs: limbs, tail and wings lag behind
-      // and settle. With the rig off it draws the same four layers as before.
-      if (typeof window.drawPetBody === 'function') {
-        window.drawPetBody(ctx, state, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H, i, {
-          img, dt: rigDt, floorY: groundY,
-          airborne: pet.y + PET_H / 2 < groundY - 1,
-        });
-      } else {
-        if (typeof window.drawPetBackLayer === 'function') {
-          window.drawPetBackLayer(ctx, state, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H, i);
-        }
-        safeDraw(img, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H);
-        if (typeof window.drawOutfitOverlay === 'function') {
-          window.drawOutfitOverlay(ctx, state, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H, i);
-        }
-        if (typeof window.drawPetFrontLayer === 'function') {
-          window.drawPetFrontLayer(ctx, state, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H, i);
-        }
+      safeDraw(img, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H);
+      if (typeof window.drawOutfitOverlay === 'function') {
+        window.drawOutfitOverlay(ctx, state, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H, i);
       }
       ctx.restore();
     }

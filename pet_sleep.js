@@ -406,20 +406,12 @@
 
       baseCtx.save();
       baseCtx.filter = useTint ? (pet.drawFilter || "none") : "none";
-      // Body parts behind the pet (wings, tail, long hair) — no-op without the art
-      if (typeof window.drawPetBackLayer === 'function') {
-        window.drawPetBackLayer(baseCtx, "sleep", px - pet.w / 2, py - pet.h / 2, pet.w, pet.h, i);
-      }
       safeDraw(baseCtx, img, px - pet.w / 2, py - pet.h / 2, pet.w, pet.h);
 
       // Outfit overlay
       if (window.drawOutfitOverlay) {
         const drawn = window.drawOutfitOverlay(baseCtx, "sleep", px - pet.w / 2, py - pet.h / 2, pet.w, pet.h, i);
         if (!drawn) window.drawOutfitOverlay(baseCtx, "stand", px - pet.w / 2, py - pet.h / 2, pet.w, pet.h, i);
-      }
-      // Body parts that sit over the body and its clothes
-      if (typeof window.drawPetFrontLayer === 'function') {
-        window.drawPetFrontLayer(baseCtx, "sleep", px - pet.w / 2, py - pet.h / 2, pet.w, pet.h, i);
       }
       baseCtx.restore();
     }
@@ -441,18 +433,10 @@
 
       baseCtx.save();
       baseCtx.filter = useTint ? (pet.drawFilter || "none") : "none";
-      // Body parts behind the pet (wings, tail, long hair) — no-op without the art
-      if (typeof window.drawPetBackLayer === 'function') {
-        window.drawPetBackLayer(baseCtx, state, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h, i);
-      }
       safeDraw(baseCtx, img, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h);
 
       if (window.drawOutfitOverlay) {
         window.drawOutfitOverlay(baseCtx, state, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h, i);
-      }
-      // Body parts that sit over the body and its clothes
-      if (typeof window.drawPetFrontLayer === 'function') {
-        window.drawPetFrontLayer(baseCtx, state, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h, i);
       }
       baseCtx.restore();
     });

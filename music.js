@@ -100,21 +100,11 @@
 
       const t = getFit(img, i);
       _lastFits[i] = t;
-      // Body parts behind the pet (wings, tail, long hair) — no-op without the art
-      if (typeof window.drawPetBackLayer === "function") {
-        window.drawPetBackLayer(ctx, "stand", t.x, t.y, t.w, t.h, i);
-      }
-
       ctx.drawImage(img, t.x, t.y, t.w, t.h);
 
       // Outfit overlay (per pet)
       if (window.drawOutfitOverlay) {
         window.drawOutfitOverlay(ctx, "stand", t.x, t.y, t.w, t.h, i);
-      }
-
-      // Body parts that sit over the body and its clothes
-      if (typeof window.drawPetFrontLayer === "function") {
-        window.drawPetFrontLayer(ctx, "stand", t.x, t.y, t.w, t.h, i);
       }
     }
 
