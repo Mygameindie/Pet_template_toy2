@@ -28,13 +28,20 @@
 //  WIND (troll blower): skirt-like clothes (dresses + anything with "skirt"
 //  in its name) blow in the wind automatically. The normal skirt image is
 //  bent in code (flared, lifted and fluttered), so no extra "blown" art is
-//  needed. Tune the feel with WIND_STYLE in outfit_system_single_sprite.js.
+//  needed. Two styles: "flow" (soft billow, the default) and "lift" (the hem
+//  is thrown up and flared wide like an umbrella). Pick per item with
+//  windStyle below. Tune the feel with WIND_STYLE / WIND_LIFT in
+//  outfit_system_single_sprite.js.
 //
 //  This is a plain JS file (no network/JSON loading) so it can't glitch or
 //  fail to load mid-game — it's the smoothest, simplest setup.
 // ===========================================================
 
 window.OUTFIT_CONFIG = {
+
+  // Wind style per skirt/dress id: "flow" or "lift". Anything not listed uses
+  // "default". Add a line here for each skirt that should blow up high.
+  windStyle: { default: "flow", skirt1: "lift" },
 
   // -------------------------------------------------------------------------
   // CATEGORIES — order, display name, and draw layer (z). Higher z = on top.

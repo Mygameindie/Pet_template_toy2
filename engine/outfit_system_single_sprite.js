@@ -342,7 +342,7 @@
   const WIND_STYLE = {
     flare: 0.45,       // how much the hem widens at full wind (0.45 = +45%)
     lift: 0.30,        // how far the hem rises toward the waist (0..0.45)
-    sway: 0.06,        // sideways flutter, as a fraction of the garment width
+    sway: 0.025,       // sideways flutter, as a fraction of the garment width
     ripple: 0.035,     // small wavy ruffle along the hem
     speed: 9,          // flutter speed
     dressWaist: 0.40,  // dresses: the top 40% (bodice) stays still
@@ -374,6 +374,12 @@
       return (target === 0 && cur < 0.01) ? 0 : cur;
     },
   };
+
+  // Which wind style an item uses: OUTFIT_CONFIG.windStyle[id] ("flow" | "lift").
+  function windStyleOf(id) {
+    const m = (window.OUTFIT_CONFIG && window.OUTFIT_CONFIG.windStyle) || {};
+    return m[id] || m.default || "flow";
+  }
 
   function isSkirtLike(key, id) {
     return key === "dress" || /skirt/i.test(String(id));
@@ -408,8 +414,62 @@
     return b;
   }
 
+  // "lift" style: the umbrella pose. The upper skirt stays narrow, the hem
+  // is thrown up and out wide, with the hem edges curling a little higher
+  // than the middle. Choose which clothes use it in outfit_config.js
+  // (windStyle). Clothes not listed there use the softer "flow" style.
+  const WIND_LIFT = {
+    lift: 0.33,        // how far the hem is thrown up toward the waist (0..0.45)
+    flare: 1.05,       // how much wider the hem gets (1.05 = about double)
+    from: 0.60,        // flaring starts this far down the skirt (0..1)
+    curve: 0.12,       // hem edges rise this much higher than the middle
+    sway: 0.01,        // slight sideways flutter
+    pulse: 0.05,       // the flare breathes a little with the gusts
+    cell: 3,           // column width in source pixels (smaller = smoother)
+  };
+
+  function drawLift(ctx, image, x, y, w, h, s, dressLike) {
+    const nw = image.naturalWidth;
+    const b = opaqueBounds(image);
+    if (!b) return false;
+    const kx = w / nw, ky = h / image.naturalHeight;
+    const startY = b.top + (b.bottom - b.top) * (dressLike ? WIND_STYLE.dressWaist : 0);
+    const len = b.bottom - startY;
+    if (len < 4) return false;
+    const t = performance.now() / 1000 * WIND_STYLE.speed;
+    const pulse = 1 + WIND_LIFT.pulse * Math.sin(t * 0.9);
+    const lift = Math.min(0.45, WIND_LIFT.lift * s);
+    const posY = f => y + (startY + len * (f - lift * f * f)) * ky;
+    const midX = (b.left + b.right) / 2;
+    const half = (b.right - b.left) / 2;
+
+    if (startY > 0) ctx.drawImage(image, 0, 0, nw, startY, x, y, w, startY * ky);
+
+    const step = WIND_STYLE.strip;
+    for (let sy = startY; sy < b.bottom; sy += step) {
+      const sh = Math.min(step, b.bottom - sy);
+      const f0 = (sy - startY) / len;
+      const f1 = (sy + sh - startY) / len;
+      const fm = (f0 + f1) / 2;
+      let e = Math.max(0, Math.min(1, (fm - WIND_LIFT.from) / (1 - WIND_LIFT.from)));
+      e = e * e * (3 - 2 * e);
+      const scale = 1 + s * WIND_LIFT.flare * e * pulse;
+      const off = s * WIND_LIFT.sway * w * fm * Math.sin(t * 0.8 - fm * 3);
+      const dy0 = posY(f0), dy1 = posY(f1);
+      for (let sx = b.left; sx < b.right; sx += WIND_LIFT.cell) {
+        const sw = Math.min(WIND_LIFT.cell, b.right - sx);
+        const u = (sx + sw / 2 - midX) / half;                 // -1 (left edge) .. 1 (right edge)
+        const rise = s * WIND_LIFT.curve * len * ky * e * u * u;
+        const destX = x + midX * kx + off + (sx - midX) * kx * scale;
+        ctx.drawImage(image, sx, sy, sw, sh, destX, dy0 - rise, sw * kx * scale + 0.6, Math.max(0.5, dy1 - dy0 + 0.6));
+      }
+    }
+    return true;
+  }
+
   // Draw a skirt-like garment with the wind effect. Returns true if drawn.
-  function drawWindy(ctx, image, x, y, w, h, s, dressLike) {
+  function drawWindy(ctx, image, x, y, w, h, s, dressLike, style) {
+    if (style === "lift") return drawLift(ctx, image, x, y, w, h, s, dressLike);
     const nw = image.naturalWidth, nh = image.naturalHeight;
     const b = opaqueBounds(image);
     if (!b) return false;
@@ -648,7 +708,7 @@
       const drawImg = hex ? tintedImage(it.img, hex) : it.img;
       const wind = (window.ClothWind && isSkirtLike(k, id)) ? window.ClothWind.level(p) : 0;
       if (wind > 0.02 && drawImg.complete && drawImg.naturalWidth && !drawImg._failed) {
-        if (drawWindy(ctx, drawImg, x, y, w, h, wind, k === "dress")) { drew = true; return; }
+        if (drawWindy(ctx, drawImg, x, y, w, h, wind, k === "dress", windStyleOf(id))) { drew = true; return; }
       }
       if (safeDraw(ctx, drawImg, x, y, w, h)) drew = true;
     });
