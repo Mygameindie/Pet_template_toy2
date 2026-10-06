@@ -41,7 +41,25 @@ window.OUTFIT_CONFIG = {
 
   // Wind style per skirt/dress id: "flow" or "lift". Anything not listed uses
   // "default". Add a line here for each skirt that should blow up high.
-  windStyle: { default: "flow", skirt1: "lift" },
+  //
+  // For a dress that also has a veil, sleeves, crown... use { style, region }
+  // so ONLY the skirt piece moves. region is the skirt's box as fractions
+  // (0..1) of the image: left/right edges, top = waist, bottom = hem.
+  // If the hem gets cut off, raise bottom; if veil bits get dragged along,
+  // narrow left/right. Optional hide = a box (same fractions) that fades away
+  // while blowing, for parts of the dress that shouldn't stay under a lifted skirt.
+  windStyle: {
+    default: "flow",
+    skirt1: "lift",
+    dress1: {
+      style: "lift",
+      region: {
+        left: 0.41, right: 0.59, top: 0.605, bottom: 0.80,
+        // the lower underskirt outline: it fades away while the skirt is blown up
+        hide: { left: 0.37, right: 0.63, top: 0.83, bottom: 0.91 },
+      },
+    },
+  },
 
   // -------------------------------------------------------------------------
   // CATEGORIES — order, display name, and draw layer (z). Higher z = on top.

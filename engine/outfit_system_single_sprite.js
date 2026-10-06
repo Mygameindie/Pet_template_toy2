@@ -375,10 +375,13 @@
     },
   };
 
-  // Which wind style an item uses: OUTFIT_CONFIG.windStyle[id] ("flow" | "lift").
-  function windStyleOf(id) {
+  // Wind settings for an item from OUTFIT_CONFIG.windStyle[id]: either a
+  // style name ("flow" | "lift") or { style, region } (see windFrame).
+  function windConfigOf(id) {
     const m = (window.OUTFIT_CONFIG && window.OUTFIT_CONFIG.windStyle) || {};
-    return m[id] || m.default || "flow";
+    const c = m[id] !== undefined ? m[id] : m.default;
+    if (c && typeof c === "object") return { style: c.style || "flow", region: c.region || null };
+    return { style: c || "flow", region: null };
   }
 
   function isSkirtLike(key, id) {
@@ -414,13 +417,58 @@
     return b;
   }
 
+  // Where the moving part of a garment is (source pixels) and the still part,
+  // which is drawn right away. With a region ({left,right,top,bottom} as 0..1
+  // fractions of the image) only that piece moves - e.g. the skirt of a dress
+  // whose veil and sleeves must stay put. Without one, the whole garment's
+  // covered area moves (a dress keeps its top dressWaist part still).
+  function windFrame(ctx, image, x, y, w, h, dressLike, region, s) {
+    const nw = image.naturalWidth, nh = image.naturalHeight;
+    const kx = w / nw, ky = h / nh;
+    let b, startY;
+    if (region) {
+      b = { left: region.left * nw, right: region.right * nw, top: region.top * nh, bottom: region.bottom * nh };
+      startY = b.top;
+    } else {
+      b = opaqueBounds(image);
+      if (!b) return null;
+      startY = b.top + (b.bottom - b.top) * (dressLike ? WIND_STYLE.dressWaist : 0);
+    }
+    const len = b.bottom - startY;
+    if (len < 4) return null;
+    if (region) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, w, h);
+      ctx.rect(x + b.left * kx, y + b.top * ky, (b.right - b.left) * kx, (b.bottom - b.top) * ky);
+      const hd = region.hide;
+      if (hd) ctx.rect(x + hd.left * w, y + hd.top * h, (hd.right - hd.left) * w, (hd.bottom - hd.top) * h);
+      ctx.clip("evenodd");
+      ctx.drawImage(image, x, y, w, h);
+      ctx.restore();
+      // A "hide" area (e.g. an underskirt that lifts away with the skirt) fades out as the wind builds.
+      if (hd && s < 1) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x + hd.left * w, y + hd.top * h, (hd.right - hd.left) * w, (hd.bottom - hd.top) * h);
+        ctx.clip();
+        ctx.globalAlpha = Math.max(0, 1 - s * 1.6);
+        ctx.drawImage(image, x, y, w, h);
+        ctx.restore();
+      }
+    } else if (startY > 0) {
+      ctx.drawImage(image, 0, 0, nw, startY, x, y, w, startY * ky);
+    }
+    return { b, startY, len, kx, ky };
+  }
+
   // "lift" style: the umbrella pose. The upper skirt stays narrow, the hem
   // is thrown up and out wide, with the hem edges curling a little higher
   // than the middle. Choose which clothes use it in outfit_config.js
   // (windStyle). Clothes not listed there use the softer "flow" style.
   const WIND_LIFT = {
     lift: 0.33,        // how far the hem is thrown up toward the waist (0..0.45)
-    flare: 1.05,       // how much wider the hem gets (1.05 = about double)
+    flare: 1.15,       // how much wider the hem gets (1.15 = a bit over double)
     from: 0.60,        // flaring starts this far down the skirt (0..1)
     curve: 0.12,       // hem edges rise this much higher than the middle
     sway: 0.01,        // slight sideways flutter
@@ -428,14 +476,10 @@
     cell: 3,           // column width in source pixels (smaller = smoother)
   };
 
-  function drawLift(ctx, image, x, y, w, h, s, dressLike) {
-    const nw = image.naturalWidth;
-    const b = opaqueBounds(image);
-    if (!b) return false;
-    const kx = w / nw, ky = h / image.naturalHeight;
-    const startY = b.top + (b.bottom - b.top) * (dressLike ? WIND_STYLE.dressWaist : 0);
-    const len = b.bottom - startY;
-    if (len < 4) return false;
+  function drawLift(ctx, image, x, y, w, h, s, dressLike, region) {
+    const fr = windFrame(ctx, image, x, y, w, h, dressLike, region, s);
+    if (!fr) return false;
+    const { b, startY, len, kx, ky } = fr;
     const t = performance.now() / 1000 * WIND_STYLE.speed;
     const pulse = 1 + WIND_LIFT.pulse * Math.sin(t * 0.9);
     const lift = Math.min(0.45, WIND_LIFT.lift * s);
@@ -443,7 +487,6 @@
     const midX = (b.left + b.right) / 2;
     const half = (b.right - b.left) / 2;
 
-    if (startY > 0) ctx.drawImage(image, 0, 0, nw, startY, x, y, w, startY * ky);
 
     const step = WIND_STYLE.strip;
     for (let sy = startY; sy < b.bottom; sy += step) {
@@ -468,24 +511,17 @@
   }
 
   // Draw a skirt-like garment with the wind effect. Returns true if drawn.
-  function drawWindy(ctx, image, x, y, w, h, s, dressLike, style) {
-    if (style === "lift") return drawLift(ctx, image, x, y, w, h, s, dressLike);
-    const nw = image.naturalWidth, nh = image.naturalHeight;
-    const b = opaqueBounds(image);
-    if (!b) return false;
-    const kx = w / nw, ky = h / nh;
-    const startY = b.top + (b.bottom - b.top) * (dressLike ? WIND_STYLE.dressWaist : 0);
-    const len = b.bottom - startY;
-    if (len < 4) return false;
+  function drawWindy(ctx, image, x, y, w, h, s, dressLike, style, region) {
+    if (style === "lift") return drawLift(ctx, image, x, y, w, h, s, dressLike, region);
+    const fr = windFrame(ctx, image, x, y, w, h, dressLike, region, s);
+    if (!fr) return false;
+    const { b, startY, len, kx, ky } = fr;
     const t = performance.now() / 1000 * WIND_STYLE.speed;
     const midX = (b.left + b.right) / 2;
     // Hem lifts and the wind pulses a little, so it never looks mechanical.
     const gust = 0.85 + 0.15 * Math.sin(t * 0.7);
     const lift = Math.min(0.45, WIND_STYLE.lift * s * gust);
     const posY = f => y + (startY + len * (f - lift * f * f)) * ky; // monotonic: no gaps
-
-    // Everything above the waist is drawn untouched.
-    if (startY > 0) ctx.drawImage(image, 0, 0, nw, startY, x, y, w, startY * ky);
 
     const step = WIND_STYLE.strip;
     for (let sy = startY; sy < b.bottom; sy += step) {
@@ -499,9 +535,9 @@
         + s * WIND_STYLE.ripple * grow * Math.sin(fm * 16 - t * 2.2);
       const off = s * WIND_STYLE.sway * w * grow * Math.sin(t * 0.8 - fm * 3.2);
       const dy0 = posY(f0), dy1 = posY(f1);
-      const destW = w * scale;
-      const destX = x + midX * kx * (1 - scale) + off;
-      ctx.drawImage(image, 0, sy, nw, sh, destX, dy0, destW, Math.max(0.5, dy1 - dy0 + 0.6));
+      const destW = (b.right - b.left) * kx * scale;
+      const destX = x + midX * kx + (b.left - midX) * kx * scale + off;
+      ctx.drawImage(image, b.left, sy, b.right - b.left, sh, destX, dy0, destW, Math.max(0.5, dy1 - dy0 + 0.6));
     }
     return true;
   }
@@ -708,7 +744,8 @@
       const drawImg = hex ? tintedImage(it.img, hex) : it.img;
       const wind = (window.ClothWind && isSkirtLike(k, id)) ? window.ClothWind.level(p) : 0;
       if (wind > 0.02 && drawImg.complete && drawImg.naturalWidth && !drawImg._failed) {
-        if (drawWindy(ctx, drawImg, x, y, w, h, wind, k === "dress", windStyleOf(id))) { drew = true; return; }
+        const wc = windConfigOf(id);
+        if (drawWindy(ctx, drawImg, x, y, w, h, wind, k === "dress", wc.style, wc.region)) { drew = true; return; }
       }
       if (safeDraw(ctx, drawImg, x, y, w, h)) drew = true;
     });
