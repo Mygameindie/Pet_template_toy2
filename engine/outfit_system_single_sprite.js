@@ -331,28 +331,119 @@
   }
 
   // ---- Cloth wind (used by the troll blower) --------------------------------
-  // A mode sets a per-pet wind strength (0..1); while it's above zero,
-  // skirt-like garments (dresses + anything with "skirt" in its id) swap to
-  // their blown-up art: <name>_w.png (e.g. skirt1.png -> skirt1_w.png).
-  // If the _w image is missing, the garment just keeps its normal art.
+  // A mode sets a per-pet wind strength (0..1). While it's above zero,
+  // skirt-like garments (dresses + anything with "skirt" in its id) are drawn
+  // with a live wind effect: the normal skirt art is sliced into thin
+  // horizontal strips and each strip is flared, swayed and lifted by a
+  // travelling wave, so the hem billows and flutters. No extra "_w" art is
+  // needed - it works on any skirt/dress image, in any colour.
+  //
+  // Tweak the feel with WIND_STYLE below.
+  const WIND_STYLE = {
+    flare: 0.45,       // how much the hem widens at full wind (0.45 = +45%)
+    lift: 0.30,        // how far the hem rises toward the waist (0..0.45)
+    sway: 0.06,        // sideways flutter, as a fraction of the garment width
+    ripple: 0.035,     // small wavy ruffle along the hem
+    speed: 9,          // flutter speed
+    dressWaist: 0.40,  // dresses: the top 40% (bodice) stays still
+    strip: 2,          // strip height in source pixels (smaller = smoother)
+    rampUp: 9,         // how fast the wind builds when the blower starts
+    rampDown: 3.5,     // how slowly the skirt settles when it stops
+  };
+
   window.ClothWind = window.ClothWind || {
-    _strength: {},
+    _strength: {},   // target strength set by the mode (0..1)
+    _cur: {},        // eased strength actually used for drawing
+    _t: {},          // last time each pet's level was updated
     set(p, s) { this._strength[p] = Math.max(0, Math.min(1, s || 0)); },
     get(p) { return this._strength[p] || 0; },
-    reset() { this._strength = {}; },
+    reset() { this._strength = {}; this._cur = {}; this._t = {}; },
+    // Smoothed strength: eases in when the blower arrives and the skirt
+    // swings back down gently when it leaves, instead of snapping.
+    level(p) {
+      const now = performance.now();
+      const target = this._strength[p] || 0;
+      let cur = this._cur[p] || 0;
+      const last = this._t[p];
+      if (last != null) {
+        const dt = Math.min(0.1, (now - last) / 1000);
+        if (dt > 0) cur += (target - cur) * (1 - Math.exp(-(target > cur ? WIND_STYLE.rampUp : WIND_STYLE.rampDown) * dt));
+      }
+      this._t[p] = now;
+      this._cur[p] = cur;
+      return (target === 0 && cur < 0.01) ? 0 : cur;
+    },
   };
 
   function isSkirtLike(key, id) {
     return key === "dress" || /skirt/i.test(String(id));
   }
 
-  // Lazy-load the "_w" wind variant of a garment image (cached on the image).
-  function windVariant(image) {
-    if (!image || !image.src) return null;
-    if (!image._windImg) {
-      image._windImg = img(image.src.replace(/\.png(\?.*)?$/i, "_w.png$1"));
+  // Find the rows/columns a garment actually covers (cached on the image) so
+  // the effect knows where the waist and hem are.
+  function opaqueBounds(image) {
+    if (image._bounds !== undefined) return image._bounds;
+    let b = null;
+    try {
+      const w = image.naturalWidth, h = image.naturalHeight;
+      const cv = document.createElement("canvas");
+      cv.width = w; cv.height = h;
+      const cx = cv.getContext("2d", { willReadFrequently: true });
+      cx.drawImage(image, 0, 0);
+      const d = cx.getImageData(0, 0, w, h).data;
+      let top = h, bottom = -1, left = w, right = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (d[(y * w + x) * 4 + 3] > 16) {
+            if (y < top) top = y;
+            if (y > bottom) bottom = y;
+            if (x < left) left = x;
+            if (x > right) right = x;
+          }
+        }
+      }
+      if (bottom >= 0) b = { top, bottom: bottom + 1, left, right: right + 1 };
+    } catch (_) { b = null; }
+    image._bounds = b;
+    return b;
+  }
+
+  // Draw a skirt-like garment with the wind effect. Returns true if drawn.
+  function drawWindy(ctx, image, x, y, w, h, s, dressLike) {
+    const nw = image.naturalWidth, nh = image.naturalHeight;
+    const b = opaqueBounds(image);
+    if (!b) return false;
+    const kx = w / nw, ky = h / nh;
+    const startY = b.top + (b.bottom - b.top) * (dressLike ? WIND_STYLE.dressWaist : 0);
+    const len = b.bottom - startY;
+    if (len < 4) return false;
+    const t = performance.now() / 1000 * WIND_STYLE.speed;
+    const midX = (b.left + b.right) / 2;
+    // Hem lifts and the wind pulses a little, so it never looks mechanical.
+    const gust = 0.85 + 0.15 * Math.sin(t * 0.7);
+    const lift = Math.min(0.45, WIND_STYLE.lift * s * gust);
+    const posY = f => y + (startY + len * (f - lift * f * f)) * ky; // monotonic: no gaps
+
+    // Everything above the waist is drawn untouched.
+    if (startY > 0) ctx.drawImage(image, 0, 0, nw, startY, x, y, w, startY * ky);
+
+    const step = WIND_STYLE.strip;
+    for (let sy = startY; sy < b.bottom; sy += step) {
+      const sh = Math.min(step, b.bottom - sy);
+      const f0 = (sy - startY) / len;
+      const f1 = (sy + sh - startY) / len;
+      const fm = (f0 + f1) / 2;
+      const grow = Math.pow(fm, 1.3);                       // effect grows toward the hem
+      const scale = 1
+        + s * WIND_STYLE.flare * grow * gust
+        + s * WIND_STYLE.ripple * grow * Math.sin(fm * 16 - t * 2.2);
+      const off = s * WIND_STYLE.sway * w * grow * Math.sin(t * 0.8 - fm * 3.2);
+      const dy0 = posY(f0), dy1 = posY(f1);
+      const destW = w * scale;
+      const destX = x + midX * kx * (1 - scale) + off;
+      ctx.drawImage(image, 0, sy, nw, sh, destX, dy0, destW, Math.max(0.5, dy1 - dy0 + 0.6));
     }
-    return image._windImg;
+    return true;
   }
 
   // ---- UI: button + panel ---------------------------------------------------
@@ -554,12 +645,11 @@
       const it = catalog[k] && catalog[k].items && catalog[k].items[id];
       if (!it || !it.img || it.img._failed) return;
       const hex = COLORS[(window.clothingColors[p] && window.clothingColors[p][k]) || DEFAULT_COLOR] || null;
-      let baseImg = it.img;
-      if (window.ClothWind && window.ClothWind.get(p) > 0.02 && isSkirtLike(k, id)) {
-        const wImg = windVariant(it.img);
-        if (wImg && !wImg._failed && wImg.complete && wImg.naturalWidth) baseImg = wImg;
+      const drawImg = hex ? tintedImage(it.img, hex) : it.img;
+      const wind = (window.ClothWind && isSkirtLike(k, id)) ? window.ClothWind.level(p) : 0;
+      if (wind > 0.02 && drawImg.complete && drawImg.naturalWidth && !drawImg._failed) {
+        if (drawWindy(ctx, drawImg, x, y, w, h, wind, k === "dress")) { drew = true; return; }
       }
-      const drawImg = hex ? tintedImage(baseImg, hex) : baseImg;
       if (safeDraw(ctx, drawImg, x, y, w, h)) drew = true;
     });
     return drew;

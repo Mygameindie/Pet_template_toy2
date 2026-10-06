@@ -3,7 +3,7 @@
 // Hammer: click hammer button -> tap pet -> synced impact.
 // Spray: click spray button -> drag/move spray bottle near pet -> click/tap to spray.
 // Blower: click blower button -> drag it under a skirt/dress -> wind blows the
-//         clothing up (the garment swaps to its <name>_w.png art while blown).
+//         clothing up (the skirt/dress art is animated in code while blown).
 // All tools use the disgust face and reduce happiness through PetStats.troll().
 // ===========================================================
 
