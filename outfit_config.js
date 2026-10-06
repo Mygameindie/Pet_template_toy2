@@ -39,6 +39,23 @@
 
 window.OUTFIT_CONFIG = {
 
+  // -------------------------------------------------------------------------
+  // BACK PIECES (drawn BEHIND the body)
+  // A clothing item can have a second picture that sits behind the pet, so a
+  // skirt/dress can have a back part (seen between and behind the legs) and a
+  // front part. Draw both on the same canvas size, then in the wardrobe list:
+  //     dress: [ "dress1", { id: "dress2", back: true } ]
+  //   -> dress2.png       = front piece (on top of the body, as usual)
+  //   -> dress2_back.png  = back piece  (behind the body)
+  // (use back: "myname" to pick a different file name). The back piece gets the
+  // same colour and, for skirts/dresses, the same wind. In windStyle you can
+  // add backRegion (same idea as region) or backWind: false for a back piece
+  // that should stay still, such as a long veil.
+  //
+  // A whole category can also sit behind the body: add behind: true to its line
+  // in categories below (e.g. a cape or back hair).
+  // -------------------------------------------------------------------------
+
   // Wind style per skirt/dress id: "flow" or "lift". Anything not listed uses
   // "default". Add a line here for each skirt that should blow up high.
   //

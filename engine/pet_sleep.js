@@ -417,6 +417,7 @@
 
       baseCtx.save();
       baseCtx.filter = useTint ? (pet.drawFilter || "none") : "none";
+      if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(baseCtx, "sleep", px - pet.w / 2, py - pet.h / 2, pet.w, pet.h, i);
       safeDraw(baseCtx, img, px - pet.w / 2, py - pet.h / 2, pet.w, pet.h);
 
       // Outfit overlay
@@ -444,6 +445,7 @@
 
       baseCtx.save();
       baseCtx.filter = useTint ? (pet.drawFilter || "none") : "none";
+      if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(baseCtx, state, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h, i);
       safeDraw(baseCtx, img, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h);
 
       if (window.drawOutfitOverlay) {

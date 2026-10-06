@@ -167,6 +167,7 @@
 
     ctx.save();
     if (needsTint) ctx.filter = PET_CFG[i].drawFilter || 'none';
+    if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(ctx, 'stand', petX(i) - PET_W / 2, petY() - PET_H / 2, PET_W, PET_H, i);
     ctx.drawImage(img, petX(i) - PET_W / 2, petY() - PET_H / 2, PET_W, PET_H);
     if (typeof window.drawOutfitOverlay === 'function') {
       window.drawOutfitOverlay(ctx, 'stand', petX(i) - PET_W / 2, petY() - PET_H / 2, PET_W, PET_H, i);

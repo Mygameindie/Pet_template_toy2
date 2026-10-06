@@ -577,6 +577,7 @@
         ctx.imageSmoothingQuality = 'high';
         ctx.filter = useFilter;
 
+        if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(ctx, 'stand', x, petY, petW, petH, idx);
         ctx.drawImage(img, x, petY, petW, petH);
 
         if (typeof window.drawOutfitOverlay === 'function') {

@@ -100,6 +100,7 @@
 
       const t = getFit(img, i);
       _lastFits[i] = t;
+      if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(ctx, "stand", t.x, t.y, t.w, t.h, i);
       ctx.drawImage(img, t.x, t.y, t.w, t.h);
 
       // Outfit overlay (per pet)

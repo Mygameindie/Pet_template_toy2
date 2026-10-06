@@ -363,6 +363,9 @@
       const x = pet.x - pet.w / 2;
       const y = pet.y - pet.h / 2;
 
+      // Back pieces (behind the body)
+      if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(ctx, "stand", x, y, pet.w, pet.h, i);
+
       // Base
       safeDrawPet(i, pet.mood, x, y, pet.w, pet.h);
 

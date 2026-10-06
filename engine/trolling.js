@@ -594,6 +594,7 @@
       if (img && !img._failed && img.complete && img.naturalWidth > 0) {
         ctx.save();
         ctx.filter = useTintFallback ? (pet.drawFilter || "none") : "none";
+        if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(ctx, "stand", pet.x, pet.y + recoil, pet.w, pet.h, i);
         ctx.drawImage(img, pet.x, pet.y + recoil, pet.w, pet.h);
 
         if (window.drawOutfitOverlay) {

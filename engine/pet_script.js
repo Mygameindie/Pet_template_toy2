@@ -335,6 +335,9 @@
       ctx.save();
       ctx.filter = useTintFallback ? pet.drawFilter : 'none';
 
+      // Back pieces (behind the body)
+      if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(ctx, state, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h, i);
+
       // Base (naked)
       safeDraw(img, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h);
 

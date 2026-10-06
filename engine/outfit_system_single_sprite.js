@@ -91,12 +91,12 @@
     return base.charAt(0).toUpperCase() + base.slice(1);
   }
 
-  // Accept either "top1" or { id, label, prefix }.
+  // Accept either "top1" or { id, label, prefix, back }.
   function normItem(entry) {
     if (entry === null || entry === undefined) return null;
     if (typeof entry === "string" || typeof entry === "number") {
       const id = String(entry);
-      return { id, label: humanize(id), prefix: id };
+      return { id, label: humanize(id), prefix: id, back: null };
     }
     const id = entry.id || entry.prefix;
     if (!id) return null;
@@ -104,6 +104,8 @@
       id: String(id),
       label: entry.label || humanize(id),
       prefix: String(entry.prefix || id),
+      // back: true -> "<prefix>_back.png" is drawn BEHIND the body; or give a name.
+      back: entry.back ? (typeof entry.back === "string" ? entry.back : `${entry.prefix || id}_back`) : null,
     };
   }
 
@@ -111,6 +113,7 @@
     return {
       label: def.label || def.key,
       z: Number(def.z) || 100,
+      behind: !!def.behind,
       items: { 0: { id: 0, label: "None", img: null } },
     };
   }
@@ -121,7 +124,7 @@
     : FALLBACK_CONFIG;
 
   const cats = cfg.categories.map(c => ({
-    key: c.key, label: c.label || c.key, z: Number(c.z) || 100,
+    key: c.key, label: c.label || c.key, z: Number(c.z) || 100, behind: !!c.behind,
   }));
 
   // Every pet shares the same dress-up system. Pet count comes from
@@ -142,7 +145,7 @@
         if (!Array.isArray(list)) return;
         list.forEach(entry => {
           const it = normItem(entry);
-          if (it) catalog[p][c.key].items[it.id] = { id: it.id, label: it.label, img: img(`${it.prefix}.png`) };
+          if (it) catalog[p][c.key].items[it.id] = { id: it.id, label: it.label, img: img(`${it.prefix}.png`), back: it.back ? img(`${it.back}.png`) : null };
         });
       });
     });
@@ -380,8 +383,10 @@
   function windConfigOf(id) {
     const m = (window.OUTFIT_CONFIG && window.OUTFIT_CONFIG.windStyle) || {};
     const c = m[id] !== undefined ? m[id] : m.default;
-    if (c && typeof c === "object") return { style: c.style || "flow", region: c.region || null };
-    return { style: c || "flow", region: null };
+    if (c && typeof c === "object") {
+      return { style: c.style || "flow", region: c.region || null, backRegion: c.backRegion || null, backWind: c.backWind };
+    }
+    return { style: c || "flow", region: null, backRegion: null, backWind: true };
   }
 
   function isSkirtLike(key, id) {
@@ -730,7 +735,26 @@
     updateButtonLabel();
   };
 
-  window.drawOutfitOverlay = function (ctx, state, x, y, w, h, petIndex) {
+  // Draw one clothing image: colour tint, then the wind effect when it is a
+  // skirt-like garment. isBack = this is a behind-the-body piece (it uses
+  // backRegion / backWind from the windStyle config instead of region).
+  function drawCloth(ctx, p, k, id, image, x, y, w, h, isBack) {
+    if (!image || image._failed) return false;
+    const hex = COLORS[(window.clothingColors[p] && window.clothingColors[p][k]) || DEFAULT_COLOR] || null;
+    const drawImg = hex ? tintedImage(image, hex) : image;
+    const wc = windConfigOf(id);
+    const wind = (window.ClothWind && isSkirtLike(k, id) && !(isBack && wc.backWind === false))
+      ? window.ClothWind.level(p) : 0;
+    if (wind > 0.02 && drawImg.complete && drawImg.naturalWidth && !drawImg._failed) {
+      if (drawWindy(ctx, drawImg, x, y, w, h, wind, k === "dress", wc.style, isBack ? wc.backRegion : wc.region)) return true;
+    }
+    return safeDraw(ctx, drawImg, x, y, w, h);
+  }
+
+  // Two passes per pet: the BEHIND pass (call before drawing the body) draws
+  // back pieces - an item's "<name>_back.png" and whole categories marked
+  // behind:true; the normal pass (call after the body) draws everything else.
+  function drawLayers(ctx, x, y, w, h, petIndex, behind) {
     if (window._modeName === "shower") return false;
     const p = typeof petIndex === "number" ? petIndex : activePet();
     const catalog = window.dressUpCatalog[p] || window.dressUpCatalog[0] || {};
@@ -740,16 +764,24 @@
       if (id === 0 || id === "0") return;
       const it = catalog[k] && catalog[k].items && catalog[k].items[id];
       if (!it || !it.img || it.img._failed) return;
-      const hex = COLORS[(window.clothingColors[p] && window.clothingColors[p][k]) || DEFAULT_COLOR] || null;
-      const drawImg = hex ? tintedImage(it.img, hex) : it.img;
-      const wind = (window.ClothWind && isSkirtLike(k, id)) ? window.ClothWind.level(p) : 0;
-      if (wind > 0.02 && drawImg.complete && drawImg.naturalWidth && !drawImg._failed) {
-        const wc = windConfigOf(id);
-        if (drawWindy(ctx, drawImg, x, y, w, h, wind, k === "dress", wc.style, wc.region)) { drew = true; return; }
+      const catBehind = !!catalog[k].behind;
+      if (behind) {
+        const piece = catBehind ? it.img : it.back;
+        if (piece && drawCloth(ctx, p, k, id, piece, x, y, w, h, true)) drew = true;
+      } else if (!catBehind) {
+        if (drawCloth(ctx, p, k, id, it.img, x, y, w, h, false)) drew = true;
       }
-      if (safeDraw(ctx, drawImg, x, y, w, h)) drew = true;
     });
     return drew;
+  }
+
+  window.drawOutfitOverlay = function (ctx, state, x, y, w, h, petIndex) {
+    return drawLayers(ctx, x, y, w, h, petIndex, false);
+  };
+
+  // Call this BEFORE drawing the pet's body so back pieces sit behind it.
+  window.drawOutfitBehind = function (ctx, state, x, y, w, h, petIndex) {
+    return drawLayers(ctx, x, y, w, h, petIndex, true);
   };
 
   window.enterShowerClothesRules = function () {
