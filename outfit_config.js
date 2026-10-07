@@ -58,9 +58,10 @@ window.OUTFIT_CONFIG = {
   //   -> dress2.png       = front piece (on top of the body, as usual)
   //   -> dress2_back.png  = back piece  (behind the body)
   // (use back: "myname" to pick a different file name). The back piece gets the
-  // same colour. For skirts/dresses it stays STILL by default; to make it move
-  // in the wind, add backRegion (the box of its skirt part, same idea as
-  // region) or backWind: true (the whole piece moves) in windStyle.
+  // same colour. For skirts/dresses it BLOWS IN THE WIND TOGETHER WITH THE
+  // FRONT (only its skirt part, hanging from the same waist as the front). To
+  // give it its own skirt box add backRegion in windStyle; to keep it still
+  // add backWind: false.
   //
   // A whole category can also sit behind the body: add behind: true to its line
   // in categories below (e.g. a cape or back hair).

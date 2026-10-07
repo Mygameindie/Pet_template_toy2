@@ -406,6 +406,7 @@
 
   // Wind settings for an item from OUTFIT_CONFIG.windStyle[id]: a style name
   // ("flow" | "lift") or { style, region, backRegion, backWind, keep, backKeep, tune }.
+  // backWind: false keeps an item's back piece still (it blows by default).
   const windCfgCache = new Map();
   function windConfigOf(id) {
     const m = (window.OUTFIT_CONFIG && window.OUTFIT_CONFIG.windStyle) || {};
@@ -744,9 +745,9 @@
   // Where the moving band of a garment is (source pixels). With a region
   // ({left,right,top,bottom} as 0..1 fractions of the image) only the skirt
   // inside that box moves. Without one, the skirt is looked for in the whole
-  // covered area (a dress skips its top dressWaist part). The top edge is
-  // where the cloth is pinned.
-  function windGeometry(image, dressLike, region) {
+  // covered area (a dress skips its top dressWaist part; a back piece hangs
+  // from the front's waist, pinY). The top edge is where the cloth is pinned.
+  function windGeometry(image, dressLike, region, pinY) {
     const nw = image.naturalWidth, nh = image.naturalHeight;
     let b, startY;
     if (region) {
@@ -755,7 +756,9 @@
     } else {
       b = opaqueBounds(image);
       if (!b) return null;
-      startY = b.top + (b.bottom - b.top) * (dressLike ? WIND_PHYS.dressWaist : 0);
+      startY = pinY != null
+        ? clampN(pinY * nh, b.top, b.bottom)
+        : b.top + (b.bottom - b.top) * (dressLike ? WIND_PHYS.dressWaist : 0);
     }
     const len = b.bottom - startY;
     if (len < 4) return null;
@@ -775,7 +778,7 @@
   // Draw a skirt-like garment through its cloth simulation. Returns false when
   // the cloth is at rest (the caller then draws the picture normally).
   function drawWindy(ctx, image, x, y, w, h, o) {
-    const g = windGeometry(image, o.dressLike, o.region);
+    const g = windGeometry(image, o.dressLike, o.region, o.pinY);
     if (!g) return false;
     const { nw, nh, startY, len } = g;
     const pr = o.cfg;
@@ -785,7 +788,8 @@
     let sim = windSims.get(o.key);
     if (!sim) {
       if (!o.target && quiet) return false;
-      sim = newSim(o.key);
+      sim = newSim(o.phaseKey || o.key);
+      if (o.isBack) sim.phase += 0.5;   // the back follows the front a moment later
       windSims.set(o.key, sim);
     }
     if (!o.target && quiet && sim.rest) return false;
@@ -1123,22 +1127,28 @@
 
   // Draw one clothing image: colour tint, then the wind effect when it is a
   // skirt-like garment (only its skirt part moves). isBack = this is a
-  // behind-the-body piece (it uses backRegion / backKeep / backWind from the
-  // windStyle config instead of region / keep).
-  function drawCloth(ctx, p, k, id, image, x, y, w, h, isBack) {
+  // behind-the-body piece (it uses backRegion / backKeep from the windStyle
+  // config instead of region / keep). front = the item's front picture.
+  function drawCloth(ctx, p, k, id, image, x, y, w, h, isBack, front) {
     if (!image || image._failed) return false;
     const hex = COLORS[(window.clothingColors[p] && window.clothingColors[p][k]) || DEFAULT_COLOR] || null;
     const drawImg = hex ? tintedImage(image, hex) : image;
-    // A back piece stays still unless the config says where its skirt is
-    // (backRegion) or asks for the whole piece to move (backWind: true).
+    // The back piece of a dress/skirt blows together with the front: its skirt
+    // hangs from the same waist (the front's region, or the front's waist
+    // line). backRegion sets its own box; backWind: false keeps it still.
     const wc = windConfigOf(id);
-    const moves = !isBack || !!wc.backRegion || wc.backWind === true;
+    const moves = !isBack || wc.backWind !== false;
+    const region = isBack ? (wc.backRegion || wc.region) : wc.region;
+    let pinY = null;
+    if (isBack && !region && front && front.complete && front.naturalWidth && !front._failed) {
+      const fg = windGeometry(front, k === "dress", null);
+      if (fg) pinY = fg.startY / fg.nh;
+    }
     if (moves && isSkirtLike(k, id) && drawImg.complete && drawImg.naturalWidth && !drawImg._failed) {
       const target = window.ClothWind ? window.ClothWind.get(p) : 0;
       if (drawWindy(ctx, drawImg, x, y, w, h, {
-        key: `${p}|${k}|${id}|${isBack ? "b" : "f"}`,
-        p, dressLike: k === "dress", cfg: wc.preset,
-        region: isBack ? wc.backRegion : wc.region,
+        key: `${p}|${k}|${id}|${isBack ? "b" : "f"}`, phaseKey: `${p}|${k}|${id}`, isBack,
+        p, dressLike: k === "dress", cfg: wc.preset, region, pinY,
         keep: isBack ? wc.backKeep : wc.keep,
         target, side: window.ClothWind ? window.ClothWind.side(p) : 0,
       })) return true;
@@ -1162,7 +1172,7 @@
       const catBehind = !!catalog[k].behind;
       if (behind) {
         const piece = catBehind ? it.img : it.back;
-        if (piece && drawCloth(ctx, p, k, id, piece, x, y, w, h, true)) drew = true;
+        if (piece && drawCloth(ctx, p, k, id, piece, x, y, w, h, true, catBehind ? null : it.img)) drew = true;
       } else if (!catBehind) {
         if (drawCloth(ctx, p, k, id, it.img, x, y, w, h, false)) drew = true;
       }
