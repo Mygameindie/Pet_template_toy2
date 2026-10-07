@@ -26,14 +26,10 @@
 //  top with any bottom (top1 + bottom2) — they are not re-paired.
 //
 //  WIND (troll blower): skirt-like clothes (dresses + anything with "skirt"
-//  in its name) blow in the wind automatically. The normal skirt image is
-//  bent in code (flared, lifted and fluttered), so no extra "blown" art is
-//  needed. Two styles: "flow" (soft billow, the default) and "lift" (the hem
-//  is thrown up and flared wide like an umbrella). Pick per item with
-//  windStyle below. The skirt is a small cloth simulation: it lags,
-//  overshoots and settles, reacts to gusts and to the pet moving, and reads
-//  its own shape from the picture (a longer skirt swings slower). Tune it with
-//  WIND_PRESETS / WIND_PHYS in outfit_system_single_sprite.js.
+//  in its name) blow in the wind automatically, and any item can have moving
+//  parts (sleeves, veils, a cape). The picture is bent in code - no extra
+//  "blown" art is needed. Pick a style per item in windStyle below; the full
+//  list of options is documented at the top of engine/cloth_wind.js.
 //
 //  This is a plain JS file (no network/JSON loading) so it can't glitch or
 //  fail to load mid-game — it's the smoothest, simplest setup.
@@ -46,14 +42,13 @@ const DRESS1_SKIRT = {
   hide: { left: 0.37, right: 0.63, top: 0.83, bottom: 0.91 },
 };
 
-// The long dress1 has sleeves that flap in the wind. (Its back piece blows as a whole, like a normal dress: backWind + backStyle below.) Same idea:
-// boxes as fractions (0..1) of the picture. A "flap" is pinned on its inner
-// edge (pin: "right" for the sleeve on the left of the picture) and opens, rises
-// and flutters at the free end. A "skirt" part hangs from its top edge; dir
-// pushes it outward from the body (-1 = left, 1 = right).
+// The sleeves of dress1 flap in the wind. A "flap" is pinned on its inner edge
+// (pin: "right" for the sleeve on the left of the picture) and opens, rises and
+// flutters at the free end. region = the sleeve's box, as fractions (0..1) of
+// the picture.
 const DRESS1_PARTS = [
-  { kind: "flap", on: "front", pin: "right", region: { left: 0.245, right: 0.40, top: 0.52, bottom: 0.73 } },
-  { kind: "flap", on: "front", pin: "left",  region: { left: 0.60,  right: 0.755, top: 0.52, bottom: 0.73 } },
+  { kind: "flap", pin: "right", region: { left: 0.245, right: 0.40,  top: 0.52, bottom: 0.73 } },
+  { kind: "flap", pin: "left",  region: { left: 0.60,  right: 0.755, top: 0.52, bottom: 0.73 } },
 ];
 
 window.OUTFIT_CONFIG = {
@@ -67,33 +62,30 @@ window.OUTFIT_CONFIG = {
   //   -> dress2.png       = front piece (on top of the body, as usual)
   //   -> dress2_back.png  = back piece  (behind the body)
   // (use back: "myname" to pick a different file name). The back piece gets the
-  // same colour. For skirts/dresses it stays STILL by default; to make it move
-  // in the wind, add backRegion (the box of its skirt part, same idea as
-  // region) or backWind: true (the whole piece moves) in windStyle.
+  // same colour. It stays STILL by default; to make it blow in the wind too, add
+  // back: true (or back: { style, region }) in windStyle.
   //
   // A whole category can also sit behind the body: add behind: true to its line
   // in categories below (e.g. a cape or back hair).
   // -------------------------------------------------------------------------
 
-  // Wind style per skirt/dress id: "flow" or "lift". Anything not listed uses
-  // "default". Add a line here for each skirt that should blow up high.
-  //
-  // For a dress that also has a veil, sleeves, crown... use { style, region }
-  // so ONLY the skirt piece moves. region is the skirt's box as fractions
-  // (0..1) of the image: left/right edges, top = waist, bottom = hem.
-  // If the hem gets cut off, raise bottom; if veil bits get dragged along,
-  // narrow left/right. Optional tune: { flare, lift, speed } changes the blown-up
-  // pose of one item (flare = hem widening, lift = how high the hem rises,
-  // speed = swing speed). Optional hide = a box (same fractions) that fades away
-  // while blowing, for parts of the dress that shouldn't stay under a lifted skirt.
-  // parts: [...] adds more pieces that move on their own (sleeves, side veils,
-  // a cape...) - see DRESS1_PARTS above. Each part is { kind, region, on, pin, dir, tune }.
+  // Wind per skirt/dress id. A style name ("flow" = soft billow, the default, or
+  // "lift" = the hem is thrown up wide like an umbrella), or an object:
+  //   style  : "flow" | "lift"
+  //   region : only this box moves (left/right edges, top = waist, bottom = hem,
+  //            as 0..1 fractions of the picture); omit it and the whole dress
+  //            below the waist moves. If the hem gets cut off raise bottom.
+  //            hide = a box that fades away while blown (an underskirt).
+  //   back   : true -> the "<name>_back.png" piece blows too, as a whole (or
+  //            { style, region } to choose how). Left out, it stays still.
+  //   parts  : extra moving pieces, e.g. sleeves (see DRESS1_PARTS above).
+  //   tune   : { flare, lift, speed, ripple } changes the blown pose.
   windStyle: {
     default: "flow",
     skirt1: "lift",
-    // The gold skirt of dress1. Its back picture has the same skirt in the same
-    // place, so the back piece uses the same box and lifts together with it.
-    dress1: { style: "lift", region: DRESS1_SKIRT, backWind: true, backStyle: "flow", parts: DRESS1_PARTS },
+    // dress1: the gold apron lifts like an umbrella, the sleeves flap, and the
+    // back piece billows softly as one piece.
+    dress1: { style: "lift", region: DRESS1_SKIRT, back: { style: "flow" }, parts: DRESS1_PARTS },
   },
 
   // -------------------------------------------------------------------------
