@@ -37,6 +37,13 @@
 //  fail to load mid-game — it's the smoothest, simplest setup.
 // ===========================================================
 
+// The moving skirt piece of dress1, as fractions (0..1) of the picture.
+const DRESS1_SKIRT = {
+  left: 0.41, right: 0.59, top: 0.605, bottom: 0.80,
+  // the lower underskirt outline: it fades away while the skirt is blown up
+  hide: { left: 0.37, right: 0.63, top: 0.83, bottom: 0.91 },
+};
+
 window.OUTFIT_CONFIG = {
 
   // -------------------------------------------------------------------------
@@ -48,9 +55,9 @@ window.OUTFIT_CONFIG = {
   //   -> dress2.png       = front piece (on top of the body, as usual)
   //   -> dress2_back.png  = back piece  (behind the body)
   // (use back: "myname" to pick a different file name). The back piece gets the
-  // same colour and, for skirts/dresses, the same wind. In windStyle you can
-  // add backRegion (same idea as region) or backWind: false for a back piece
-  // that should stay still, such as a long veil.
+  // same colour. For skirts/dresses it stays STILL by default; to make it move
+  // in the wind, add backRegion (the box of its skirt part, same idea as
+  // region) or backWind: true (the whole piece moves) in windStyle.
   //
   // A whole category can also sit behind the body: add behind: true to its line
   // in categories below (e.g. a cape or back hair).
@@ -68,14 +75,9 @@ window.OUTFIT_CONFIG = {
   windStyle: {
     default: "flow",
     skirt1: "lift",
-    dress1: {
-      style: "lift",
-      region: {
-        left: 0.41, right: 0.59, top: 0.605, bottom: 0.80,
-        // the lower underskirt outline: it fades away while the skirt is blown up
-        hide: { left: 0.37, right: 0.63, top: 0.83, bottom: 0.91 },
-      },
-    },
+    // The gold skirt of dress1. Its back picture has the same skirt in the same
+    // place, so the back piece uses the same box and lifts together with it.
+    dress1: { style: "lift", region: DRESS1_SKIRT, backRegion: DRESS1_SKIRT },
   },
 
   // -------------------------------------------------------------------------

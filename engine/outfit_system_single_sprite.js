@@ -743,8 +743,10 @@
     const hex = COLORS[(window.clothingColors[p] && window.clothingColors[p][k]) || DEFAULT_COLOR] || null;
     const drawImg = hex ? tintedImage(image, hex) : image;
     const wc = windConfigOf(id);
-    const wind = (window.ClothWind && isSkirtLike(k, id) && !(isBack && wc.backWind === false))
-      ? window.ClothWind.level(p) : 0;
+    // A back piece stays still unless the config says where its skirt is
+    // (backRegion) or asks for the whole piece to move (backWind: true).
+    const moves = !isBack || !!wc.backRegion || wc.backWind === true;
+    const wind = (window.ClothWind && isSkirtLike(k, id) && moves) ? window.ClothWind.level(p) : 0;
     if (wind > 0.02 && drawImg.complete && drawImg.naturalWidth && !drawImg._failed) {
       if (drawWindy(ctx, drawImg, x, y, w, h, wind, k === "dress", wc.style, isBack ? wc.backRegion : wc.region)) return true;
     }
