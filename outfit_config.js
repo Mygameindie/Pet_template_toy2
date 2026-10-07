@@ -30,8 +30,10 @@
 //  bent in code (flared, lifted and fluttered), so no extra "blown" art is
 //  needed. Two styles: "flow" (soft billow, the default) and "lift" (the hem
 //  is thrown up and flared wide like an umbrella). Pick per item with
-//  windStyle below. Tune the feel with WIND_STYLE / WIND_LIFT in
-//  outfit_system_single_sprite.js.
+//  windStyle below. The skirt is a small cloth simulation: it lags,
+//  overshoots and settles, reacts to gusts and to the pet moving, and reads
+//  its own shape from the picture (a longer skirt swings slower). Tune it with
+//  WIND_PRESETS / WIND_PHYS in outfit_system_single_sprite.js.
 //
 //  This is a plain JS file (no network/JSON loading) so it can't glitch or
 //  fail to load mid-game — it's the smoothest, simplest setup.
@@ -70,7 +72,9 @@ window.OUTFIT_CONFIG = {
   // so ONLY the skirt piece moves. region is the skirt's box as fractions
   // (0..1) of the image: left/right edges, top = waist, bottom = hem.
   // If the hem gets cut off, raise bottom; if veil bits get dragged along,
-  // narrow left/right. Optional hide = a box (same fractions) that fades away
+  // narrow left/right. Optional tune: { flare, lift, speed } changes the blown-up
+  // pose of one item (flare = hem widening, lift = how high the hem rises,
+  // speed = swing speed). Optional hide = a box (same fractions) that fades away
   // while blowing, for parts of the dress that shouldn't stay under a lifted skirt.
   windStyle: {
     default: "flow",
