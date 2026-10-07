@@ -333,6 +333,360 @@
     return true;
   }
 
+  // ---- Cloth wind (used by the troll blower) --------------------------------
+  // Skirt-like garments (dresses + anything with "skirt" in its id) are a small
+  // cloth simulation, not a canned animation. The moving part of the picture is
+  // cut into rows hanging from the waist. Every row is a spring + damper:
+  //   - the blower (a mode calls ClothWind.set(pet, 0..1)) pushes each row toward
+  //     a blown-up pose: hem thrown up and out, with gusts running down the cloth;
+  //   - gravity/stiffness pull it back, so it lags, overshoots and settles;
+  //   - the pet's own movement (walking, dragging, falling) swings and billows it;
+  //   - neighbouring rows pull on each other, so the cloth bends smoothly.
+  // The picture itself sets the physics: each row bends around its own centre
+  // and width as drawn, and a longer skirt swings slower (like a pendulum).
+  //
+  // Tweak: WIND_PRESETS (the blown-up pose: "flow" soft, "lift" umbrella) and
+  // WIND_PHYS (how the cloth moves). Per item, windStyle in outfit_config.js
+  // can set tune: { flare, lift, speed, ... } to override a preset.
+  const WIND_PRESETS = {
+    flow: { flare: 0.45, lift: 0.30, from: 0,    curve: 0,    ripple: 0.03,  cell: 0 },
+    lift: { flare: 1.15, lift: 0.33, from: 0.60, curve: 0.12, ripple: 0.012, cell: 4 },
+  };
+  const WIND_PHYS = {
+    omega: 9,          // swing speed (rad/s) of a skirt about refLength long
+    refLength: 0.17,   // skirt length, as a fraction of the picture height
+    zeta: 0.45,        // damping: lower = bouncier, higher = settles faster
+    hemSoft: 0.55,     // how much looser the hem is than the waist
+    couple: 0.35,      // how strongly neighbouring rows pull on each other
+    gust: 0.14,        // gusts change the blown-up pose by this much
+    gustSpeed: 5.5,    // gust speed
+    sway: 0.03,        // sideways gust sway (fraction of the width)
+    motionSway: 0.06,  // sideways lag when the pet moves
+    motionLift: 0.07,  // billow when the pet falls
+    dressWaist: 0.40,  // a dress with no region: its top 40% stays still
+    rows: 24,          // simulated rows per piece
+    strip: 2,          // drawn strip height in source pixels
+  };
+
+  const windSims = new Map();   // one cloth per pet + garment + piece
+  const windMotion = {};        // each pet's recent movement
+  function resetWindSims() {
+    windSims.clear();
+    Object.keys(windMotion).forEach(k => delete windMotion[k]);
+  }
+
+  window.ClothWind = window.ClothWind || {
+    _strength: {},   // blower strength per pet (0..1), set by the mode
+    set(p, s) { this._strength[p] = Math.max(0, Math.min(1, s || 0)); },
+    get(p) { return this._strength[p] || 0; },
+    reset() { this._strength = {}; resetWindSims(); },
+  };
+
+  // Wind settings for an item from OUTFIT_CONFIG.windStyle[id]: a style name
+  // ("flow" | "lift") or { style, region, backRegion, backWind, tune }.
+  const windCfgCache = new Map();
+  function windConfigOf(id) {
+    const m = (window.OUTFIT_CONFIG && window.OUTFIT_CONFIG.windStyle) || {};
+    const c = m[id] !== undefined ? m[id] : m.default;
+    const hit = windCfgCache.get(id);
+    if (hit && hit.src === c) return hit.out;
+    const o = (c && typeof c === "object") ? c : { style: c };
+    const style = WIND_PRESETS[o.style] ? o.style : "flow";
+    const out = {
+      style,
+      preset: Object.assign({}, WIND_PRESETS[style], o.tune || {}),
+      region: o.region || null,
+      backRegion: o.backRegion || null,
+      backWind: o.backWind,
+    };
+    windCfgCache.set(id, { src: c, out });
+    return out;
+  }
+
+  function isSkirtLike(key, id) {
+    return key === "dress" || /skirt/i.test(String(id));
+  }
+
+  // ---- Reading the picture: where the cloth actually is ---------------------
+  function alphaOf(image) {
+    if (image._alpha !== undefined) return image._alpha;
+    let a = null;
+    try {
+      const w = image.naturalWidth, h = image.naturalHeight;
+      const cv = document.createElement("canvas");
+      cv.width = w; cv.height = h;
+      const cx = cv.getContext("2d", { willReadFrequently: true });
+      cx.drawImage(image, 0, 0);
+      const d = cx.getImageData(0, 0, w, h).data;
+      a = new Uint8Array(w * h);
+      for (let i = 0; i < a.length; i++) a[i] = d[i * 4 + 3];
+    } catch (_) { a = null; }
+    image._alpha = a;
+    return a;
+  }
+
+  // The rows/columns a garment covers (cached on the image).
+  function opaqueBounds(image) {
+    if (image._bounds !== undefined) return image._bounds;
+    let b = null;
+    const a = alphaOf(image);
+    if (a) {
+      const w = image.naturalWidth, h = image.naturalHeight;
+      let top = h, bottom = -1, left = w, right = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (a[y * w + x] > 16) {
+            if (y < top) top = y;
+            if (y > bottom) bottom = y;
+            if (x < left) left = x;
+            if (x > right) right = x;
+          }
+        }
+      }
+      if (bottom >= 0) b = { top, bottom: bottom + 1, left, right: right + 1 };
+    }
+    image._bounds = b;
+    return b;
+  }
+
+  // Per source row inside the moving area: the cloth's centre and half-width as
+  // drawn (smoothed), so each row bends around its own middle, not the box's.
+  function rowProfile(image, area) {
+    const key = `${area.left}|${area.right}|${area.top}|${area.bottom}`;
+    const cache = image._rows || (image._rows = {});
+    if (cache[key] !== undefined) return cache[key];
+    let out = null;
+    const a = alphaOf(image);
+    if (a) {
+      const nw = image.naturalWidth;
+      const y0 = Math.floor(area.top), y1 = Math.ceil(area.bottom);
+      const x0 = Math.floor(area.left), x1 = Math.ceil(area.right);
+      const n = y1 - y0;
+      const left = new Float32Array(n), right = new Float32Array(n);
+      let any = false;
+      for (let y = 0; y < n; y++) {
+        let l = -1, r = -1;
+        const base = (y0 + y) * nw;
+        for (let x = x0; x < x1; x++) if (a[base + x] > 16) { if (l < 0) l = x; r = x + 1; }
+        left[y] = l; right[y] = r;
+        if (l >= 0) any = true;
+      }
+      if (any) {
+        let last = -1;                                   // fill empty rows from neighbours
+        for (let y = 0; y < n; y++) {
+          if (left[y] >= 0) last = y;
+          else if (last >= 0) { left[y] = left[last]; right[y] = right[last]; }
+        }
+        last = -1;
+        for (let y = n - 1; y >= 0; y--) {
+          if (left[y] >= 0) last = y;
+          else if (last >= 0) { left[y] = left[last]; right[y] = right[last]; }
+        }
+        const cen = new Float32Array(n), hw = new Float32Array(n);
+        const R = 5;
+        for (let y = 0; y < n; y++) {
+          let sc = 0, sh = 0, c = 0;
+          for (let j = Math.max(0, y - R); j <= Math.min(n - 1, y + R); j++) {
+            sc += (left[j] + right[j]) / 2; sh += (right[j] - left[j]) / 2; c++;
+          }
+          cen[y] = sc / c; hw[y] = sh / c;
+        }
+        out = { y0, n, cen, hw };
+      }
+    }
+    cache[key] = out;
+    return out;
+  }
+
+  // ---- The cloth simulation -------------------------------------------------
+  const smooth01 = t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+  const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
+  function lerpArr(a, f) {
+    const p = f * a.length - 0.5;
+    if (p <= 0) return a[0];
+    const i = Math.floor(p);
+    if (i >= a.length - 1) return a[a.length - 1];
+    const t = p - i;
+    return a[i] * (1 - t) + a[i + 1] * t;
+  }
+
+  function newSim() {
+    const n = WIND_PHYS.rows, F = () => new Float32Array(n);
+    return { n, fl: F(), fv: F(), up: F(), uv: F(), sw: F(), sv: F(), t: 0, rest: true };
+  }
+
+  // How the pet is moving right now, in pet-widths per second. Computed once
+  // per frame per pet (the behind pass and the front pass share it).
+  function petMotion(p, x, y, w, now) {
+    let m = windMotion[p];
+    if (!m) { m = windMotion[p] = { x, y, t: now, vx: 0, fall: 0 }; return m; }
+    const dt = (now - m.t) / 1000;
+    if (dt > 0.004) {
+      if (dt < 0.25 && w > 0) {
+        const a = 1 - Math.exp(-dt * 12);
+        m.vx += (clampN((x - m.x) / dt / w, -3, 3) - m.vx) * a;
+        m.fall += (clampN((y - m.y) / dt / w, 0, 3) - m.fall) * a;
+      } else { m.vx = 0; m.fall = 0; }
+      m.x = x; m.y = y; m.t = now;
+    }
+    return m;
+  }
+
+  function stepWind(sim, now, target, quiet, pr, omega, mo) {
+    let dt = sim.t ? (now - sim.t) / 1000 : 0;
+    sim.t = now;
+    if (dt <= 0) return;
+    dt = Math.min(dt, 0.05);
+    const steps = Math.max(1, Math.ceil(dt / (1 / 90))), h = dt / steps;
+    const n = sim.n, w2 = omega * omega, c = 2 * WIND_PHYS.zeta * omega;
+    const P = WIND_PHYS, gs = P.gustSpeed;
+    const { fl, fv, up, uv, sw, sv } = sim;
+    for (let st = 0; st < steps; st++) {
+      const tt = now / 1000 - dt + (st + 1) * h;
+      for (let i = 0; i < n; i++) {
+        const f = (i + 0.5) / n;
+        const e = pr.from > 0 ? smooth01((f - pr.from) / (1 - pr.from)) : Math.pow(f, 1.3);
+        const gust = 1 + P.gust * (0.6 * Math.sin(tt * gs - f * 4) + 0.4 * Math.sin(tt * gs * 1.7 + f * 2 + 1.3));
+        const flEq = target * pr.flare * e * gust + mo.fall * 0.3 * e;
+        const upEq = target * pr.lift * f * f * gust + mo.fall * P.motionLift * f * f;
+        const swEq = target * P.sway * f * Math.sin(tt * gs * 0.8 - f * 3.2) - mo.vx * P.motionSway * f;
+        const k = w2 * (1 - P.hemSoft * f);
+        const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
+        const kc = P.couple * w2;
+        fv[i] += (-k * (fl[i] - flEq) - c * fv[i] + kc * ((fl[a] + fl[b]) / 2 - fl[i])) * h;
+        uv[i] += (-k * (up[i] - upEq) - c * uv[i] + kc * ((up[a] + up[b]) / 2 - up[i])) * h;
+        sv[i] += (-k * (sw[i] - swEq) - c * sv[i] + kc * ((sw[a] + sw[b]) / 2 - sw[i])) * h;
+      }
+      for (let i = 0; i < n; i++) {
+        fl[i] = clampN(fl[i] + fv[i] * h, -0.3, 2.4);
+        up[i] = clampN(up[i] + uv[i] * h, -0.12, 0.44);
+        sw[i] = clampN(sw[i] + sv[i] * h, -0.2, 0.2);
+      }
+    }
+    let energy = 0;
+    for (let i = 0; i < n; i++) {
+      energy = Math.max(energy, Math.abs(fl[i]), Math.abs(up[i]), Math.abs(sw[i]) * 3,
+        Math.abs(fv[i]) * 0.1, Math.abs(uv[i]) * 0.1);
+    }
+    sim.rest = !target && quiet && energy < 0.004;
+    if (sim.rest) { fl.fill(0); fv.fill(0); up.fill(0); uv.fill(0); sw.fill(0); sv.fill(0); }
+  }
+
+  // Where the moving part of a garment is (source pixels). With a region
+  // ({left,right,top,bottom} as 0..1 fractions of the image) only that piece
+  // moves - e.g. the skirt of a dress whose veil and sleeves stay put. Without
+  // one, the whole covered area moves (a dress keeps its top dressWaist part
+  // still). The top edge is where the cloth is pinned.
+  function windGeometry(image, dressLike, region) {
+    const nw = image.naturalWidth, nh = image.naturalHeight;
+    let b, startY;
+    if (region) {
+      b = { left: region.left * nw, right: region.right * nw, top: region.top * nh, bottom: region.bottom * nh };
+      startY = b.top;
+    } else {
+      b = opaqueBounds(image);
+      if (!b) return null;
+      startY = b.top + (b.bottom - b.top) * (dressLike ? WIND_PHYS.dressWaist : 0);
+    }
+    const len = b.bottom - startY;
+    if (len < 4) return null;
+    return { nw, nh, b, startY, len };
+  }
+
+  // Draw a skirt-like garment through its cloth simulation. Returns false when
+  // the cloth is at rest (the caller then draws the picture normally).
+  function drawWindy(ctx, image, x, y, w, h, o) {
+    const g = windGeometry(image, o.dressLike, o.region);
+    if (!g) return false;
+    const { nw, nh, b, startY, len } = g;
+    const pr = o.cfg;
+    const now = performance.now();
+    const mo = petMotion(o.p, x, y, w, now);
+    const quiet = Math.abs(mo.vx) < 0.02 && mo.fall < 0.02;
+    let sim = windSims.get(o.key);
+    if (!sim) {
+      if (!o.target && quiet) return false;
+      sim = newSim();
+      windSims.set(o.key, sim);
+    }
+    if (!o.target && quiet && sim.rest) return false;
+    const omega = clampN(WIND_PHYS.omega * Math.sqrt(WIND_PHYS.refLength / (len / nh)), 4, 14) * (pr.speed || 1);
+    stepWind(sim, now, o.target, quiet, pr, omega, mo);
+    if (sim.rest) return false;
+    const rows = rowProfile(image, { left: b.left, right: b.right, top: startY, bottom: b.bottom });
+    if (!rows) return false;
+
+    const kx = w / nw, ky = h / nh;
+    const n = sim.n;
+    const blown = clampN(sim.up[n - 1] / Math.max(pr.lift * 0.9, 0.05), 0, 1);
+
+    // The still part of the picture.
+    if (o.region) {
+      const hd = o.region.hide;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, w, h);
+      ctx.rect(x + b.left * kx, y + b.top * ky, (b.right - b.left) * kx, (b.bottom - b.top) * ky);
+      if (hd) ctx.rect(x + hd.left * w, y + hd.top * h, (hd.right - hd.left) * w, (hd.bottom - hd.top) * h);
+      ctx.clip("evenodd");
+      ctx.drawImage(image, x, y, w, h);
+      ctx.restore();
+      // A "hide" area (e.g. an underskirt that lifts away with the skirt) fades out as the skirt rises.
+      if (hd && blown < 1) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x + hd.left * w, y + hd.top * h, (hd.right - hd.left) * w, (hd.bottom - hd.top) * h);
+        ctx.clip();
+        ctx.globalAlpha = Math.max(0, 1 - blown * 1.6);
+        ctx.drawImage(image, x, y, w, h);
+        ctx.restore();
+      }
+    } else if (startY > 0) {
+      ctx.drawImage(image, 0, 0, nw, startY, x, y, w, startY * ky);
+    }
+
+    // The moving part, row by row, bent by the simulation.
+    const cell = pr.cell || 0;
+    const posY = f => y + (startY + len * (f - lerpArr(sim.up, f))) * ky;
+    let prev = -1e9;
+    let sy = startY;
+    while (sy < b.bottom) {
+      // Rows that are not curling are drawn as one strip (cheap); only the
+      // curling hem is drawn column by column.
+      const efq = clampN(lerpArr(sim.fl, (sy - startY) / len) / Math.max(pr.flare, 0.01), 0, 1.2);
+      const curl = cell > 0 && efq > 0.03;
+      const step = curl ? WIND_PHYS.strip + 1 : WIND_PHYS.strip;
+      const sh = Math.min(step, b.bottom - sy);
+      const rowStart = sy;
+      sy += step;
+      const f0 = (rowStart - startY) / len, f1 = (rowStart + sh - startY) / len, fm = (f0 + f1) / 2;
+      const ri = clampN(Math.floor(rowStart) - rows.y0, 0, rows.n - 1);
+      const ci = rows.cen[ri], hw = Math.max(1, rows.hw[ri]);
+      const flare = lerpArr(sim.fl, fm);
+      const ef = clampN(flare / Math.max(pr.flare, 0.01), 0, 1.2);
+      const scale = Math.max(0.2, 1 + flare + pr.ripple * ef * Math.sin(fm * 16 - now * 0.013));
+      const off = lerpArr(sim.sw, fm) * w;
+      let dy0 = Math.max(posY(f0), prev);
+      const dy1 = Math.max(posY(f1), dy0 + 0.5);
+      prev = dy1;
+      const dh = dy1 - dy0 + 0.6;
+      const baseX = x + ci * kx + off;
+      if (!curl) {
+        ctx.drawImage(image, b.left, rowStart, b.right - b.left, sh,
+          baseX + (b.left - ci) * kx * scale, dy0, (b.right - b.left) * kx * scale, dh);
+      } else {
+        for (let sx = b.left; sx < b.right; sx += cell) {
+          const sw2 = Math.min(cell, b.right - sx);
+          const u = clampN((sx + sw2 / 2 - ci) / hw, -1.3, 1.3);
+          const rise = pr.curve * len * ky * ef * u * u;      // hem edges curl up
+          ctx.drawImage(image, sx, rowStart, sw2, sh,
+            baseX + (sx - ci) * kx * scale, dy0 - rise, sw2 * kx * scale + 0.6, dh);
+        }
+      }
+    }
+    return true;
+  }
+
   // ---- UI: button + panel ---------------------------------------------------
   let selectedCategory = catKeys()[0] || (cats[0] && cats[0].key) || "top";
 
@@ -521,18 +875,25 @@
     updateButtonLabel();
   };
 
-  // Draw one clothing image: colour tint, then the wind effect. isBack = this
-  // is a behind-the-body piece (it uses the "back" part of its windStyle).
+  // Draw one clothing image: colour tint, then the wind effect when it is a
+  // skirt-like garment. isBack = this is a behind-the-body piece (it uses
+  // backRegion / backWind from the windStyle config instead of region).
   function drawCloth(ctx, p, k, id, image, x, y, w, h, isBack) {
     if (!image || image._failed) return false;
     const hex = COLORS[(window.clothingColors[p] && window.clothingColors[p][k]) || DEFAULT_COLOR] || null;
     const drawImg = hex ? tintedImage(image, hex) : image;
-    // Skirts, dresses and sleeves blow in the wind (see cloth_wind.js); it
-    // returns false while the cloth is at rest, and then we draw it plainly.
-    if (window.ClothWind && drawImg.complete && drawImg.naturalWidth && !drawImg._failed &&
-        window.ClothWind.draw(ctx, drawImg, x, y, w, h, {
-          pet: p, id, cat: k, back: !!isBack, skirtLike: k === "dress" || /skirt/i.test(String(id)),
-        })) return true;
+    // A back piece stays still unless the config says where its skirt is
+    // (backRegion) or asks for the whole piece to move (backWind: true).
+    const wc = windConfigOf(id);
+    const moves = !isBack || !!wc.backRegion || wc.backWind === true;
+    if (moves && isSkirtLike(k, id) && drawImg.complete && drawImg.naturalWidth && !drawImg._failed) {
+      const target = window.ClothWind ? window.ClothWind.get(p) : 0;
+      if (drawWindy(ctx, drawImg, x, y, w, h, {
+        key: `${p}|${k}|${id}|${isBack ? "b" : "f"}`,
+        p, dressLike: k === "dress", cfg: wc.preset,
+        region: isBack ? wc.backRegion : wc.region, target,
+      })) return true;
+    }
     return safeDraw(ctx, drawImg, x, y, w, h);
   }
 
