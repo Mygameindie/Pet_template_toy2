@@ -386,7 +386,7 @@
   };
 
   // Wind settings for an item from OUTFIT_CONFIG.windStyle[id]: a style name
-  // ("flow" | "lift") or { style, region, backRegion, backWind, tune, parts }.
+  // ("flow" | "lift") or { style, region, backRegion, backWind, backStyle, tune, parts }.
   // parts = extra pieces that move on their own, e.g. the sleeves and side
   // veils of a long dress (see outfit_config.js):
   //   { kind: "flap" | "skirt", region, on: "front" | "back" | "both",
@@ -416,6 +416,7 @@
       region: o.region || null,
       backRegion: o.backRegion || null,
       backWind: o.backWind,
+      backPreset: Object.assign({}, WIND_PRESETS[WIND_PRESETS[o.backStyle] ? o.backStyle : style], o.backTune || {}),
       parts: (Array.isArray(o.parts) ? o.parts : []).filter(pt => pt && pt.region).map(windPart),
     };
     windCfgCache.set(id, { src: c, out });
@@ -1062,7 +1063,7 @@
       const base = `${p}|${k}|${id}|${isBack ? "b" : "f"}`;
       const pieces = [];
       if (moves && isSkirtLike(k, id)) {
-        pieces.push({ kind: "skirt", key: base, cfg: wc.preset, region: isBack ? wc.backRegion : wc.region,
+        pieces.push({ kind: "skirt", key: base, cfg: isBack ? wc.backPreset : wc.preset, region: isBack ? wc.backRegion : wc.region,
           dressLike: k === "dress", p, target });
       }
       // Extra moving parts (sleeves, side veils...) from windStyle[id].parts.
