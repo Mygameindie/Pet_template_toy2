@@ -46,6 +46,20 @@ const DRESS1_SKIRT = {
   hide: { left: 0.37, right: 0.63, top: 0.83, bottom: 0.91 },
 };
 
+// The long dress1 also has sleeves and side veils that blow about. Same idea:
+// boxes as fractions (0..1) of the picture. A "flap" is pinned on its inner
+// edge (pin: "right" for the sleeve on the left of the picture) and opens, rises
+// and flutters at the free end. A "skirt" part hangs from its top edge; dir
+// pushes it outward from the body (-1 = left, 1 = right).
+const DRESS1_PARTS = [
+  { kind: "flap", on: "front", pin: "right", region: { left: 0.245, right: 0.40, top: 0.52, bottom: 0.73 } },
+  { kind: "flap", on: "front", pin: "left",  region: { left: 0.60,  right: 0.755, top: 0.52, bottom: 0.73 } },
+  { kind: "skirt", on: "back", dir: -1, tune: { flare: 0.5, lift: 0.07, from: 0.3, speed: 0.85, ripple: 0.02 },
+    region: { left: 0.32, right: 0.43, top: 0.46, bottom: 0.83 } },
+  { kind: "skirt", on: "back", dir: 1,  tune: { flare: 0.5, lift: 0.07, from: 0.3, speed: 0.85, ripple: 0.02 },
+    region: { left: 0.57, right: 0.68, top: 0.46, bottom: 0.83 } },
+];
+
 window.OUTFIT_CONFIG = {
 
   // -------------------------------------------------------------------------
@@ -76,12 +90,14 @@ window.OUTFIT_CONFIG = {
   // pose of one item (flare = hem widening, lift = how high the hem rises,
   // speed = swing speed). Optional hide = a box (same fractions) that fades away
   // while blowing, for parts of the dress that shouldn't stay under a lifted skirt.
+  // parts: [...] adds more pieces that move on their own (sleeves, side veils,
+  // a cape...) - see DRESS1_PARTS above. Each part is { kind, region, on, pin, dir, tune }.
   windStyle: {
     default: "flow",
     skirt1: "lift",
     // The gold skirt of dress1. Its back picture has the same skirt in the same
     // place, so the back piece uses the same box and lifts together with it.
-    dress1: { style: "lift", region: DRESS1_SKIRT, backRegion: DRESS1_SKIRT },
+    dress1: { style: "lift", region: DRESS1_SKIRT, backRegion: DRESS1_SKIRT, parts: DRESS1_PARTS },
   },
 
   // -------------------------------------------------------------------------

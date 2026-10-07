@@ -351,6 +351,9 @@
   const WIND_PRESETS = {
     flow: { flare: 0.45, lift: 0.30, from: 0,    curve: 0,    ripple: 0.03,  cell: 0 },
     lift: { flare: 1.15, lift: 0.33, from: 0.60, curve: 0.12, ripple: 0.012, cell: 4 },
+    // A sleeve / cuff / cape tip pinned at one edge: it opens, rises and
+    // flutters at the free end (lift is a fraction of the picture height).
+    flap: { lift: 0.035, open: 0.38, ripple: 0.02, flutter: 1 },
   };
   const WIND_PHYS = {
     omega: 9,          // swing speed (rad/s) of a skirt about refLength long
@@ -383,8 +386,23 @@
   };
 
   // Wind settings for an item from OUTFIT_CONFIG.windStyle[id]: a style name
-  // ("flow" | "lift") or { style, region, backRegion, backWind, tune }.
+  // ("flow" | "lift") or { style, region, backRegion, backWind, tune, parts }.
+  // parts = extra pieces that move on their own, e.g. the sleeves and side
+  // veils of a long dress (see outfit_config.js):
+  //   { kind: "flap" | "skirt", region, on: "front" | "back" | "both",
+  //     pin: "left" | "right" (flap), dir: -1 | 1 (skirt: push outward), tune }
   const windCfgCache = new Map();
+  function windPart(pt) {
+    const kind = pt && pt.kind === "skirt" ? "skirt" : "flap";
+    const style = WIND_PRESETS[pt.style] ? pt.style : (kind === "skirt" ? "flow" : "flap");
+    return {
+      kind, region: pt.region,
+      on: pt.on === "back" || pt.on === "both" ? pt.on : "front",
+      pin: pt.pin === "left" ? "left" : "right",
+      dir: pt.dir ? Math.sign(pt.dir) : 0,
+      preset: Object.assign({}, WIND_PRESETS[style], pt.tune || {}),
+    };
+  }
   function windConfigOf(id) {
     const m = (window.OUTFIT_CONFIG && window.OUTFIT_CONFIG.windStyle) || {};
     const c = m[id] !== undefined ? m[id] : m.default;
@@ -398,6 +416,7 @@
       region: o.region || null,
       backRegion: o.backRegion || null,
       backWind: o.backWind,
+      parts: (Array.isArray(o.parts) ? o.parts : []).filter(pt => pt && pt.region).map(windPart),
     };
     windCfgCache.set(id, { src: c, out });
     return out;
@@ -593,59 +612,162 @@
     return { nw, nh, b, startY, len };
   }
 
-  // Draw a skirt-like garment through its cloth simulation. Returns false when
-  // the cloth is at rest (the caller then draws the picture normally).
-  function drawWindy(ctx, image, x, y, w, h, o) {
-    const g = windGeometry(image, o.dressLike, o.region);
-    if (!g) return false;
-    const { nw, nh, b, startY, len } = g;
-    const pr = o.cfg;
-    const now = performance.now();
-    const mo = petMotion(o.p, x, y, w, now);
-    const quiet = Math.abs(mo.vx) < 0.02 && mo.fall < 0.02;
-    let sim = windSims.get(o.key);
-    if (!sim) {
-      if (!o.target && quiet) return false;
-      sim = newSim();
-      windSims.set(o.key, sim);
-    }
-    if (!o.target && quiet && sim.rest) return false;
-    const omega = clampN(WIND_PHYS.omega * Math.sqrt(WIND_PHYS.refLength / (len / nh)), 4, 14) * (pr.speed || 1);
-    stepWind(sim, now, o.target, quiet, pr, omega, mo);
-    if (sim.rest) return false;
-    const rows = rowProfile(image, { left: b.left, right: b.right, top: startY, bottom: b.bottom });
-    if (!rows) return false;
+  // ---- Flaps: sleeves, cuffs, cape tips --------------------------------------
+  // A flap is pinned along one vertical edge (pin: "right" for the left sleeve
+  // of a front-facing pet, "left" for the right one). Its free end rises, opens
+  // up and flutters in a travelling wave, driven by the same kind of spring
+  // chain as the skirt (so it lags, overshoots and settles).
+  function newFlap() {
+    const n = 14, F = () => new Float32Array(n);
+    return { n, up: F(), uv: F(), op: F(), ov: F(), t: 0, rest: true };
+  }
 
-    const kx = w / nw, ky = h / nh;
-    const n = sim.n;
-    const blown = clampN(sim.up[n - 1] / Math.max(pr.lift * 0.9, 0.05), 0, 1);
-
-    // The still part of the picture.
-    if (o.region) {
-      const hd = o.region.hide;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x, y, w, h);
-      ctx.rect(x + b.left * kx, y + b.top * ky, (b.right - b.left) * kx, (b.bottom - b.top) * ky);
-      if (hd) ctx.rect(x + hd.left * w, y + hd.top * h, (hd.right - hd.left) * w, (hd.bottom - hd.top) * h);
-      ctx.clip("evenodd");
-      ctx.drawImage(image, x, y, w, h);
-      ctx.restore();
-      // A "hide" area (e.g. an underskirt that lifts away with the skirt) fades out as the skirt rises.
-      if (hd && blown < 1) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(x + hd.left * w, y + hd.top * h, (hd.right - hd.left) * w, (hd.bottom - hd.top) * h);
-        ctx.clip();
-        ctx.globalAlpha = Math.max(0, 1 - blown * 1.6);
-        ctx.drawImage(image, x, y, w, h);
-        ctx.restore();
+  function stepFlap(sim, now, target, quiet, pr, omega, mo) {
+    let dt = sim.t ? (now - sim.t) / 1000 : 0;
+    sim.t = now;
+    if (dt <= 0) return;
+    dt = Math.min(dt, 0.05);
+    const steps = Math.max(1, Math.ceil(dt / (1 / 90))), h = dt / steps;
+    const n = sim.n, w2 = omega * omega, c = 2 * WIND_PHYS.zeta * omega;
+    const P = WIND_PHYS, gs = P.gustSpeed, kc = P.couple * w2;
+    const { up, uv, op, ov } = sim;
+    for (let st = 0; st < steps; st++) {
+      const tt = now / 1000 - dt + (st + 1) * h;
+      for (let i = 0; i < n; i++) {
+        const f = (i + 0.5) / n;
+        const gust = 1 + P.gust * 1.6 * (0.6 * Math.sin(tt * gs - f * 5) + 0.4 * Math.sin(tt * gs * 1.7 + f * 3 + 1.3));
+        const upEq = target * pr.lift * f * f * gust + mo.fall * P.motionLift * 0.6 * f * f + Math.abs(mo.vx) * 0.004 * f;
+        const opEq = target * pr.open * Math.pow(f, 1.2) * gust;
+        const k = w2 * (1 - P.hemSoft * f);
+        const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
+        uv[i] += (-k * (up[i] - upEq) - c * uv[i] + kc * ((up[a] + up[b]) / 2 - up[i])) * h;
+        ov[i] += (-k * (op[i] - opEq) - c * ov[i] + kc * ((op[a] + op[b]) / 2 - op[i])) * h;
       }
-    } else if (startY > 0) {
-      ctx.drawImage(image, 0, 0, nw, startY, x, y, w, startY * ky);
+      for (let i = 0; i < n; i++) {
+        up[i] = clampN(up[i] + uv[i] * h, -0.05, 0.2);
+        op[i] = clampN(op[i] + ov[i] * h, -0.3, 1.2);
+      }
     }
+    let energy = 0;
+    for (let i = 0; i < n; i++) {
+      energy = Math.max(energy, Math.abs(up[i]) * 20, Math.abs(op[i]),
+        Math.abs(uv[i]) * 2, Math.abs(ov[i]) * 0.1);
+    }
+    sim.rest = !target && quiet && energy < 0.004;
+    if (sim.rest) { up.fill(0); uv.fill(0); op.fill(0); ov.fill(0); }
+  }
 
-    // The moving part, row by row, bent by the simulation.
+  // Per source column inside a box: where the cloth's top/bottom edge is.
+  function colProfile(image, box) {
+    const key = `c${box.left}|${box.right}|${box.top}|${box.bottom}`;
+    const cache = image._rows || (image._rows = {});
+    if (cache[key] !== undefined) return cache[key];
+    let out = null;
+    const a = alphaOf(image);
+    if (a) {
+      const nw = image.naturalWidth;
+      const x0 = Math.floor(box.left), x1 = Math.ceil(box.right);
+      const y0 = Math.floor(box.top), y1 = Math.ceil(box.bottom);
+      const n = x1 - x0;
+      const top = new Float32Array(n), bot = new Float32Array(n);
+      let any = false;
+      for (let x = 0; x < n; x++) {
+        let t = -1, bt = -1;
+        for (let y = y0; y < y1; y++) if (a[y * nw + x0 + x] > 16) { if (t < 0) t = y; bt = y + 1; }
+        top[x] = t; bot[x] = bt;
+        if (t >= 0) any = true;
+      }
+      if (any) {
+        let last = -1;                                   // fill empty columns from neighbours
+        for (let x = 0; x < n; x++) {
+          if (top[x] >= 0) last = x;
+          else if (last >= 0) { top[x] = top[last]; bot[x] = bot[last]; }
+        }
+        last = -1;
+        for (let x = n - 1; x >= 0; x--) {
+          if (top[x] >= 0) last = x;
+          else if (last >= 0) { top[x] = top[last]; bot[x] = bot[last]; }
+        }
+        const R = 3, mid = new Float32Array(n);
+        for (let x = 0; x < n; x++) {
+          let sc = 0, c = 0;
+          for (let j = Math.max(0, x - R); j <= Math.min(n - 1, x + R); j++) { sc += (top[j] + bot[j]) / 2; c++; }
+          mid[x] = sc / c;
+        }
+        out = { x0, n, mid };
+      }
+    }
+    cache[key] = out;
+    return out;
+  }
+
+  // ---- Pieces: one cloth simulation each -------------------------------------
+  // A garment is drawn as: its still part, plus any number of moving pieces -
+  // the main skirt (region / backRegion) and the extra windStyle parts.
+  // prepPiece steps a piece's simulation (null = nothing to move), paintPiece
+  // draws it.
+  function prepPiece(image, pc, fr) {
+    const pr = pc.cfg, nw = image.naturalWidth, nh = image.naturalHeight;
+    if (pc.kind === "flap") {
+      const r = pc.region;
+      const b = { left: r.left * nw, right: r.right * nw, top: r.top * nh, bottom: r.bottom * nh };
+      const len = b.right - b.left;
+      if (len < 4 || b.bottom - b.top < 4) return null;
+      let sim = windSims.get(pc.key);
+      if (!sim) {
+        if (!pc.target && fr.quiet) return null;
+        sim = newFlap();
+        windSims.set(pc.key, sim);
+      }
+      if (!pc.target && fr.quiet && sim.rest) return null;
+      const omega = clampN(WIND_PHYS.omega * Math.sqrt(WIND_PHYS.refLength / (len / nh)), 4, 16) * (pr.speed || 1);
+      stepFlap(sim, fr.now, pc.target, fr.quiet, pr, omega, fr.mo);
+      if (sim.rest) return null;
+      const cols = colProfile(image, b);
+      return cols ? { pc, b, sim, cols, len, nw, nh, box: b } : null;
+    }
+    const g = windGeometry(image, pc.dressLike, pc.region);
+    if (!g) return null;
+    const { b, startY, len } = g;
+    let sim = windSims.get(pc.key);
+    if (!sim) {
+      if (!pc.target && fr.quiet) return null;
+      sim = newSim();
+      windSims.set(pc.key, sim);
+    }
+    if (!pc.target && fr.quiet && sim.rest) return null;
+    const omega = clampN(WIND_PHYS.omega * Math.sqrt(WIND_PHYS.refLength / (len / g.nh)), 4, 14) * (pr.speed || 1);
+    stepWind(sim, fr.now, pc.target, fr.quiet, pr, omega, fr.mo);
+    if (sim.rest) return null;
+    const rows = rowProfile(image, { left: b.left, right: b.right, top: startY, bottom: b.bottom });
+    if (!rows) return null;
+    return { pc, g, b, sim, rows, startY, len, nw: g.nw, nh: g.nh, box: b };
+  }
+
+  function paintFlap(ctx, image, x, y, w, h, st, now) {
+    const { pc, b, sim, cols, len, nw, nh } = st;
+    const pr = pc.cfg, kx = w / nw, ky = h / nh;
+    const rTop = b.top, rH = b.bottom - b.top;
+    const step = WIND_PHYS.strip + 1;
+    const opMax = Math.max(pr.open, 0.01);
+    for (let sx = b.left; sx < b.right; sx += step) {
+      const sw = Math.min(step, b.right - sx);
+      const t = clampN(pc.pin === "right" ? (b.right - (sx + sw / 2)) / len : ((sx + sw / 2) - b.left) / len, 0, 1);
+      const opn = lerpArr(sim.op, t);
+      const ef = clampN(opn / opMax, 0, 1.2);
+      const wave = pr.ripple * ef * t * Math.sin(t * 11 * (pr.flutter || 1) - now * 0.014 * (pr.flutter || 1));
+      const lift = lerpArr(sim.up, t) + wave;
+      const ci = clampN(Math.floor(sx + sw / 2) - cols.x0, 0, cols.n - 1);
+      const cy = cols.mid[ci];
+      const s = Math.max(0.2, 1 + opn);
+      const dy = y + (cy + (rTop - cy) * s) * ky - lift * h;
+      ctx.drawImage(image, sx, rTop, sw, rH, x + sx * kx, dy, sw * kx + 0.6, rH * ky * s);
+    }
+  }
+
+  function paintSkirt(ctx, image, x, y, w, h, st, now) {
+    const { pc, g, b, sim, rows, startY, len, nw, nh } = st;
+    const pr = pc.cfg, kx = w / nw, ky = h / nh, n = sim.n;
     const cell = pr.cell || 0;
     const posY = f => y + (startY + len * (f - lerpArr(sim.up, f))) * ky;
     let prev = -1e9;
@@ -665,7 +787,8 @@
       const flare = lerpArr(sim.fl, fm);
       const ef = clampN(flare / Math.max(pr.flare, 0.01), 0, 1.2);
       const scale = Math.max(0.2, 1 + flare + pr.ripple * ef * Math.sin(fm * 16 - now * 0.013));
-      const off = lerpArr(sim.sw, fm) * w;
+      // dir pushes a side panel outward so its inner edge stays by the body.
+      const off = lerpArr(sim.sw, fm) * w + (pc.dir ? pc.dir * Math.max(0, flare) * hw * kx : 0);
       let dy0 = Math.max(posY(f0), prev);
       const dy1 = Math.max(posY(f1), dy0 + 0.5);
       prev = dy1;
@@ -684,6 +807,53 @@
         }
       }
     }
+  }
+
+  // Draw a garment through its cloth simulation(s). pieces = the moving parts
+  // [{ kind: "skirt" | "flap", key, cfg, region, target, ... }]. Returns false
+  // when every piece is at rest (the caller then draws the picture normally).
+  function drawWindy(ctx, image, x, y, w, h, o) {
+    const now = performance.now();
+    const mo = petMotion(o.p, x, y, w, now);
+    const fr = { now, mo, quiet: Math.abs(mo.vx) < 0.02 && mo.fall < 0.02 };
+    const act = o.pieces.map(pc => prepPiece(image, pc, fr)).filter(Boolean);
+    if (!act.length) return false;
+    const nw = image.naturalWidth, nh = image.naturalHeight, kx = w / nw, ky = h / nh;
+
+    // The still part of the picture: everything outside the moving pieces.
+    const whole = act.find(st => st.pc.kind === "skirt" && !st.pc.region);
+    if (whole) {
+      if (whole.startY > 0) ctx.drawImage(image, 0, 0, nw, whole.startY, x, y, w, whole.startY * ky);
+    } else {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, w, h);
+      act.forEach(st => {
+        ctx.rect(x + st.box.left * kx, y + st.box.top * ky, (st.box.right - st.box.left) * kx, (st.box.bottom - st.box.top) * ky);
+        const hd = st.pc.region && st.pc.region.hide;
+        if (hd) ctx.rect(x + hd.left * w, y + hd.top * h, (hd.right - hd.left) * w, (hd.bottom - hd.top) * h);
+      });
+      ctx.clip("evenodd");
+      ctx.drawImage(image, x, y, w, h);
+      ctx.restore();
+    }
+
+    act.forEach(st => {
+      if (st.pc.kind === "flap") { paintFlap(ctx, image, x, y, w, h, st, now); return; }
+      // A "hide" area (e.g. an underskirt that lifts away with the skirt) fades out as the skirt rises.
+      const hd = st.pc.region && st.pc.region.hide;
+      const blown = clampN(st.sim.up[st.sim.n - 1] / Math.max(st.pc.cfg.lift * 0.9, 0.05), 0, 1);
+      if (hd && blown < 1) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x + hd.left * w, y + hd.top * h, (hd.right - hd.left) * w, (hd.bottom - hd.top) * h);
+        ctx.clip();
+        ctx.globalAlpha = Math.max(0, 1 - blown * 1.6);
+        ctx.drawImage(image, x, y, w, h);
+        ctx.restore();
+      }
+      paintSkirt(ctx, image, x, y, w, h, st, now);
+    });
     return true;
   }
 
@@ -886,13 +1056,22 @@
     // (backRegion) or asks for the whole piece to move (backWind: true).
     const wc = windConfigOf(id);
     const moves = !isBack || !!wc.backRegion || wc.backWind === true;
-    if (moves && isSkirtLike(k, id) && drawImg.complete && drawImg.naturalWidth && !drawImg._failed) {
+    const ready = drawImg.complete && drawImg.naturalWidth && !drawImg._failed;
+    if (ready) {
       const target = window.ClothWind ? window.ClothWind.get(p) : 0;
-      if (drawWindy(ctx, drawImg, x, y, w, h, {
-        key: `${p}|${k}|${id}|${isBack ? "b" : "f"}`,
-        p, dressLike: k === "dress", cfg: wc.preset,
-        region: isBack ? wc.backRegion : wc.region, target,
-      })) return true;
+      const base = `${p}|${k}|${id}|${isBack ? "b" : "f"}`;
+      const pieces = [];
+      if (moves && isSkirtLike(k, id)) {
+        pieces.push({ kind: "skirt", key: base, cfg: wc.preset, region: isBack ? wc.backRegion : wc.region,
+          dressLike: k === "dress", p, target });
+      }
+      // Extra moving parts (sleeves, side veils...) from windStyle[id].parts.
+      wc.parts.forEach((pt, i) => {
+        if (pt.on !== "both" && (pt.on === "back") !== !!isBack) return;
+        pieces.push({ kind: pt.kind, key: `${base}|p${i}`, cfg: pt.preset, region: pt.region,
+          pin: pt.pin, dir: pt.dir, p, target });
+      });
+      if (pieces.length && drawWindy(ctx, drawImg, x, y, w, h, { p, pieces })) return true;
     }
     return safeDraw(ctx, drawImg, x, y, w, h);
   }
