@@ -517,7 +517,9 @@
     }
     pets.forEach((pet, i) => {
       pet.wind = (blowing && inBlowZone(lastCanvasPoint, pet) && wearsSkirtLike(i)) ? 1 : 0;
-      if (window.ClothWind) window.ClothWind.set(i, pet.wind);
+      // side: where the blower is under the skirt (-1 left .. 1 right) - that side lifts first.
+      const side = pet.wind ? (lastCanvasPoint.x - (pet.x + pet.w / 2)) / (pet.w * 0.38) : 0;
+      if (window.ClothWind) window.ClothWind.set(i, pet.wind, side);
       // The pet is not amused: brief disgust + a troll stat hit while blown.
       if (pet.wind && now > (pet.nextWindTrollAt || 0)) {
         pet.nextWindTrollAt = now + 1500;

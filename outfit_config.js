@@ -26,8 +26,9 @@
 //  top with any bottom (top1 + bottom2) — they are not re-paired.
 //
 //  WIND (troll blower): skirt-like clothes (dresses + anything with "skirt"
-//  in its name) blow in the wind automatically. The normal skirt image is
-//  bent in code (flared, lifted and fluttered), so no extra "blown" art is
+//  in its name) blow in the wind automatically. Only the skirt part moves
+//  (never sleeves/arms). The normal skirt image is bent in code (flared,
+//  lifted, hem fluttering, folds shaded), so no extra "blown" art is
 //  needed. Two styles: "flow" (soft billow, the default) and "lift" (the hem
 //  is thrown up and flared wide like an umbrella). Pick per item with
 //  windStyle below. The skirt is a small cloth simulation: it lags,
@@ -74,8 +75,16 @@ window.OUTFIT_CONFIG = {
   // If the hem gets cut off, raise bottom; if veil bits get dragged along,
   // narrow left/right. Optional tune: { flare, lift, speed } changes the blown-up
   // pose of one item (flare = hem widening, lift = how high the hem rises,
-  // speed = swing speed). Optional hide = a box (same fractions) that fades away
-  // while blowing, for parts of the dress that shouldn't stay under a lifted skirt.
+  // speed = swing speed, wave = hem flutter). Optional hide = a box (same
+  // fractions) that fades away while blowing, for parts of the dress that
+  // shouldn't stay under a lifted skirt.
+  //
+  // ONLY THE SKIRT MOVES: the engine finds the skirt in the picture by itself
+  // (the cloth hanging from the waist to the hem) and leaves sleeves, arms,
+  // hands, veils and bows exactly as drawn. If a sleeve or hand is drawn
+  // pressed flat against the skirt and still gets pulled along, add
+  // keep: [ { left, right, top, bottom } ] (same fractions) around it - keep
+  // boxes never move (backKeep does the same for the back piece).
   windStyle: {
     default: "flow",
     skirt1: "lift",
