@@ -106,7 +106,7 @@ window.OUTFIT_CONFIG = {
     onepieceUnderwear: ["onepieceunderwear1"],
     top:               ["top1"],
     bottom:            ["pants1", "skirt1"],
-    dress:             ["dress1"],
+    dress:             [{ id: "dress1", back: true }],
     bodysuit:          ["bodysuit1"],
     shoes:             ["shoes1"],
     glove:             ["glove1"],
