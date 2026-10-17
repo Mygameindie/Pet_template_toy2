@@ -244,7 +244,7 @@
     const W = Math.round(RCFG.SRC_W * cs), H = Math.round(RCFG.SRC_H * cs);
     const sized = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
     const cloth = sized(), hang = sized(), over = sized(), under = sized(), blow = sized(),
-      stiff = sized(), armL = sized(), armR = sized(), back = sized();
+      stiff = sized(), armL = sized(), armR = sized(), back = sized(), overTop = sized();
     let blowFrom = Infinity;
     const D = window.drawOutfitOverlay;
     if (typeof D === 'function') {
@@ -256,7 +256,12 @@
         if (typeof it.blows === 'number') blowFrom = Math.min(blowFrom, it.blows);
         return true;
       });
-      D(over.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'over');
+      // A garment's own _over picture (a dress's bust pieces) goes ABOVE that
+      // garment; the over pictures of other things (a bra's straps) stay
+      // under the stiff top / dress worn over them.
+      const ownsTop = it => it.stiff || coversChest(it);
+      D(over.getContext('2d'), 'stand', 0, 0, W, H, i, it => !ownsTop(it), 'over');
+      D(overTop.getContext('2d'), 'stand', 0, 0, W, H, i, ownsTop, 'over');
       const sx = stiff.getContext('2d');
       D(sx, 'stand', 0, 0, W, H, i, it => it.stiff || (covers(it) && !it.hangs && !it.blows));
       // A dress (or other hanging garment) that covers the chest: its top half
@@ -284,7 +289,7 @@
     try {
       const partImgs = useToyHead ? Object.assign({}, pet.partImgs, { head: pet.toyHead }) : pet.partImgs;
       pet.body.buildArt(partImgs, cloth, cs, hang, over, under, blow,
-        isFinite(blowFrom) ? blowFrom : null, stiff, { arm_L: armL, arm_R: armR }, back);
+        isFinite(blowFrom) ? blowFrom : null, stiff, { arm_L: armL, arm_R: armR }, back, overTop);
     } catch (err) {
       // Reading the pictures' pixels is refused when the game is opened as a
       // file:// page (serve it over http, e.g. GitHub Pages). Keep the sprite.

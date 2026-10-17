@@ -646,7 +646,9 @@
     // anything else on the arms, legs or head still go with those parts.
     // back (optional): clothes drawn BEHIND the body (a dress's <name>_back.png),
     // carried by the torso and drawn behind the legs.
-    buildArt(imgs, cloth, cs, hang, over, under, blow, blowFrom, stiff, armCloth, back) {
+    // overTop (optional): over-the-chest pictures of the garments worn on top
+    // (a dress's bust pieces): on the same layer as `over` but above `stiff`.
+    buildArt(imgs, cloth, cs, hang, over, under, blow, blowFrom, stiff, armCloth, back, overTop) {
       const CW = Math.round(CFG.SRC_W * cs), CH = Math.round(CFG.SRC_H * cs);
       const mk = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, w); c.height = Math.max(1, h); return c; };
       const mkRead = (w, h) => { const c = mk(w, h); return { c, x: c.getContext('2d', { willReadFrequently: true }) }; };
@@ -965,6 +967,12 @@
         }
         t.x.drawImage(st.c, 0, 0);
         if (armArt && over) t.x.drawImage(over, 0, 0);
+        overAll = t.c;
+      }
+      if (overTop) {
+        const t = mkRead(CW, CH);
+        if (overAll) t.x.drawImage(overAll, 0, 0);
+        t.x.drawImage(overTop, 0, 0);
         overAll = t.c;
       }
       if (overAll && bboxOf(overAll.getContext('2d', { willReadFrequently: true }))) {
