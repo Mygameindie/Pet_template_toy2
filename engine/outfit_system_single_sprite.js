@@ -107,6 +107,10 @@
       prefix: String(entry.prefix || id),
       // back: true -> "<prefix>_back.png" is drawn BEHIND the body; or give a name.
       back: entry.back ? (typeof entry.back === "string" ? entry.back : `${entry.prefix || id}_back`) : null,
+      // Ragdoll flags (see outfit_config.js): hangs / stiff / blows.
+      hangs: entry.hangs,
+      stiff: entry.stiff,
+      blows: entry.blows,
     };
   }
 
@@ -119,13 +123,31 @@
     };
   }
 
+  // The optional extra pictures of a garment (<name>_over / _under / _arm_L /
+  // _arm_R). Only asked for once the garment's own picture has loaded, so
+  // clothes that don't exist don't cost four failed requests each.
+  function extraLayers(prefix) {
+    const main = new Image();
+    const names = { over: "_over", under: "_under", armL: "_arm_L", armR: "_arm_R" };
+    const out = {};
+    Object.keys(names).forEach(k => {
+      const im = new Image();
+      im._failed = true;           // nothing to draw until it has really loaded
+      im.onload = () => { im._failed = false; };
+      out[k] = im;
+    });
+    main.onload = () => Object.keys(names).forEach(k => { out[k].src = `${prefix}${names[k]}.png`; });
+    main.src = `${prefix}.png`;    // same URL as the garment itself (cached)
+    return out;
+  }
+
   // ---- Build the catalog from the config (synchronous) ----------------------
   const cfg = (window.OUTFIT_CONFIG && Array.isArray(window.OUTFIT_CONFIG.categories))
     ? window.OUTFIT_CONFIG
     : FALLBACK_CONFIG;
 
   const cats = cfg.categories.map(c => ({
-    key: c.key, label: c.label || c.key, z: Number(c.z) || 100, behind: !!c.behind,
+    key: c.key, label: c.label || c.key, z: Number(c.z) || 100, behind: !!c.behind, hangs: !!c.hangs, blows: c.blows,
   }));
 
   // Every pet shares the same dress-up system. Pet count comes from
@@ -146,7 +168,18 @@
         if (!Array.isArray(list)) return;
         list.forEach(entry => {
           const it = normItem(entry);
-          if (it) catalog[p][c.key].items[it.id] = { id: it.id, label: it.label, img: img(`${it.prefix}.png`), back: it.back ? img(`${it.back}.png`) : null };
+          if (it) catalog[p][c.key].items[it.id] = {
+            id: it.id, label: it.label, img: img(`${it.prefix}.png`), back: it.back ? img(`${it.back}.png`) : null,
+            // Optional extra layers of the same garment (missing files are fine):
+            // <name>_over.png drawn over the chest (bra straps), <name>_under.png
+            // under it, <name>_arm_L/_arm_R.png the sleeves as their own pictures.
+            ...extraLayers(it.prefix),
+            // How the ragdoll cuts it up: hangs from the hips in one piece (skirt,
+            // dress), stays whole over the chest (stiff), or blows up while falling.
+            hangs: it.hangs === undefined ? c.hangs : !!it.hangs,
+            stiff: !!it.stiff,
+            blows: it.blows === undefined ? c.blows : it.blows,
+          };
         });
       });
     });
@@ -1159,7 +1192,11 @@
   // Two passes per pet: the BEHIND pass (call before drawing the body) draws
   // back pieces - an item's "<name>_back.png" and whole categories marked
   // behind:true; the normal pass (call after the body) draws everything else.
-  function drawLayers(ctx, x, y, w, h, petIndex, behind) {
+  // only (optional): draw just the items it returns true for (main picture only).
+  // layer (optional): "over" / "under" / "armL" / "armR" draws that extra layer.
+  // With neither, every layer of each item is drawn (under, main, over, sleeves)
+  // so a plain sprite looks the same as the ragdoll built from it.
+  function drawLayers(ctx, x, y, w, h, petIndex, behind, only, layer) {
     if (window._modeName === "shower") return false;
     const p = typeof petIndex === "number" ? petIndex : activePet();
     const catalog = window.dressUpCatalog[p] || window.dressUpCatalog[0] || {};
@@ -1170,23 +1207,41 @@
       const it = catalog[k] && catalog[k].items && catalog[k].items[id];
       if (!it || !it.img || it.img._failed) return;
       const catBehind = !!catalog[k].behind;
+      if (only && !only(it)) return;
+      const extra = name => {
+        const im = it[name];
+        if (!im || im._failed || !im.complete || !im.naturalWidth) return false;
+        const hex = COLORS[(window.clothingColors[p] && window.clothingColors[p][k]) || DEFAULT_COLOR] || null;
+        return safeDraw(ctx, hex ? tintedImage(im, hex) : im, x, y, w, h);
+      };
+      if (layer) {
+        if (!behind && !catBehind && extra(layer)) drew = true;
+        return;
+      }
+      const full = !only && !behind && !catBehind;
+      if (full && extra("under")) drew = true;
       if (behind) {
         const piece = catBehind ? it.img : it.back;
         if (piece && drawCloth(ctx, p, k, id, piece, x, y, w, h, true, catBehind ? null : it.img)) drew = true;
       } else if (!catBehind) {
         if (drawCloth(ctx, p, k, id, it.img, x, y, w, h, false)) drew = true;
       }
+      if (full) {
+        if (extra("over")) drew = true;
+        if (extra("armL")) drew = true;
+        if (extra("armR")) drew = true;
+      }
     });
     return drew;
   }
 
-  window.drawOutfitOverlay = function (ctx, state, x, y, w, h, petIndex) {
-    return drawLayers(ctx, x, y, w, h, petIndex, false);
+  window.drawOutfitOverlay = function (ctx, state, x, y, w, h, petIndex, only, layer) {
+    return drawLayers(ctx, x, y, w, h, petIndex, false, only, layer);
   };
 
   // Call this BEFORE drawing the pet's body so back pieces sit behind it.
-  window.drawOutfitBehind = function (ctx, state, x, y, w, h, petIndex) {
-    return drawLayers(ctx, x, y, w, h, petIndex, true);
+  window.drawOutfitBehind = function (ctx, state, x, y, w, h, petIndex, only) {
+    return drawLayers(ctx, x, y, w, h, petIndex, true, only);
   };
 
   window.enterShowerClothesRules = function () {

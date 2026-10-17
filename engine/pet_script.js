@@ -69,7 +69,14 @@
       dragging: false,
       oldx: 0,
       oldy: 0,
+      vx: 0,
       vy: 0,
+      angle: 0,        // tilt in radians (0 = upright)
+      angVel: 0,
+      squash: 0,       // landing squash 0..MAX_SQUASH, springs back to 0
+      grabX: 0,        // where the pet was grabbed, relative to its centre
+      grabY: 0,
+      hist: [],        // recent pointer samples, used to throw on release
       onGround: false,
       frame: 0,
       timer: 0,
@@ -107,10 +114,189 @@
   else if (baseImg) baseImg.addEventListener('load', syncPetAspect);
 
   // === Physics ===
+  // All values are tuned per 60fps frame; update() scales by real elapsed time
+  // so high-refresh screens behave the same.
   const gravity = 1.2;
-  const damping = 0.985;
-  const bouncePower = 25;
-  const MIN_IMPACT = 2.0;
+  const airDrag = 0.995;        // gentle air resistance (per frame)
+  const restitution = 0.42;     // fraction of speed kept after a floor bounce
+  const wallRestitution = 0.5;
+  const groundFriction = 0.82;  // horizontal speed kept per frame while sliding
+  const REST_SPEED = 2.5;       // below this a landing settles instead of bouncing
+  const MIN_IMPACT = 6;         // impact speed that makes noise / squash
+  const MAX_SPEED = 55;
+  const MAX_SQUASH = 0.16;
+  const MAX_TILT = 0.5;         // radians a held/flying pet can lean
+  const FOLLOW = 0.35;          // how tightly a held pet chases the pointer (0..1)
+  const THROW_WINDOW = 90;      // ms of pointer history used for the throw
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+  // === Ragdoll (ported from Computer-pet) ===
+  // A pet whose body-part pictures all exist (images/parts/head.png, body.png,
+  // arm_L.png ... see ragdoll_config.js) is drawn as a skeleton instead of one
+  // flat sprite: pick it up by a hand and it hangs from that hand, throw it and
+  // it tumbles limp, then gets back up on its feet. Clothes are cut along the
+  // body parts so they move with the arms, legs and chest. A pet without a full
+  // set of parts keeps the normal sprite. Turn it off with ragdoll: false in
+  // game_config.js.
+  const RD = window.PetRagdoll, RCFG = window.RAGDOLL_CONFIG;
+  const RAGDOLL_ON = !!(RD && RCFG) && !(window.GAME_CONFIG && window.GAME_CONFIG.ragdoll === false);
+  const PX_PER_S2 = 3600;            // 1 px/frame² at 60fps, in px/s²
+  let alive = true;                  // false once this mode is unloaded
+
+  function hdDpr() {
+    const max = (window.HDCanvas && window.HDCanvas.maxDPR) || 2;
+    return Math.min(max, Math.max(1, window.devicePixelRatio || 1));
+  }
+  function partSuffix(i) { return (PET_CFG[i] && PET_CFG[i].artSuffix) || ''; }
+
+  function loadParts(pet, i) {
+    if (!RAGDOLL_ON) return;
+    if (!pet.body) {
+      pet.body = new RD.Ragdoll();
+      pet.body.gravity = gravity * PX_PER_S2;   // limbs fall exactly as fast as the pet
+    }
+    const suffix = partSuffix(i);
+    const imgs = {};
+    let pending = RCFG.parts.length;
+    pet.partsSuffix = suffix;
+    RCFG.parts.forEach(part => {
+      const im = new Image();
+      const done = ok => {
+        if (ok) imgs[part.file] = im;
+        if (--pending > 0 || !alive || pet.partsSuffix !== suffix) return;
+        pet.partImgs = imgs;
+        pet.hasParts = RCFG.parts.every(q => q.optional || imgs[q.file]);
+        pet.artSig = null;
+        pet.placed = false;
+      };
+      im.onload = () => done(true);
+      im.onerror = () => done(false);
+      im.src = 'images/parts/' + part.file + suffix + '.png';
+    });
+  }
+
+  // What the cut-up clothes were built from: the outfit, the colours and which
+  // of the worn pictures have finished loading.
+  function wornSig(i) {
+    const sel = (window.selectedClothes || [])[i] || {};
+    const col = (window.clothingColors || [])[i] || {};
+    const cat = (window.dressUpCatalog || {})[i] || (window.dressUpCatalog || {})[0] || {};
+    let ready = '';
+    Object.keys(sel).forEach(k => {
+      const it = cat[k] && cat[k].items && cat[k].items[sel[k]];
+      if (!it) return;
+      ['img', 'back', 'over', 'under', 'armL', 'armR'].forEach(n => {
+        const im = it[n];
+        ready += im ? (im._failed ? 'x' : im.complete ? '1' : '0') : '-';
+      });
+    });
+    return JSON.stringify(sel) + JSON.stringify(col) + ready + '|' + window._modeName + '|' + pet_h_sig();
+  }
+  function pet_h_sig() { return pets.map(p => p.h).join(','); }
+
+  // Cut the clothes up along the body parts and hand them to the skeleton.
+  // Only redone when the outfit or the art changes.
+  function buildBody(pet, i) {
+    const sig = wornSig(i);
+    if (sig === pet.artSig) return;
+    pet.artSig = sig;
+    const cs = (pet.h / RCFG.SRC_H) * hdDpr();
+    const W = Math.round(RCFG.SRC_W * cs), H = Math.round(RCFG.SRC_H * cs);
+    const sized = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+    const cloth = sized(), hang = sized(), over = sized(), under = sized(), blow = sized(),
+      stiff = sized(), armL = sized(), armR = sized(), back = sized();
+    let blowFrom = Infinity;
+    const D = window.drawOutfitOverlay;
+    if (typeof D === 'function') {
+      D(cloth.getContext('2d'), 'stand', 0, 0, W, H, i, it => !it.stiff && !it.blows);
+      D(hang.getContext('2d'), 'stand', 0, 0, W, H, i, it => (it.hangs || it.blows) && !it.stiff);
+      D(blow.getContext('2d'), 'stand', 0, 0, W, H, i, it => {
+        if (!it.blows || it.stiff) return false;
+        if (typeof it.blows === 'number') blowFrom = Math.min(blowFrom, it.blows);
+        return true;
+      });
+      D(over.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'over');
+      D(stiff.getContext('2d'), 'stand', 0, 0, W, H, i, it => it.stiff);
+      D(under.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'under');
+      D(armL.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'armL');
+      D(armR.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'armR');
+    }
+    if (typeof window.drawOutfitBehind === 'function') {
+      window.drawOutfitBehind(back.getContext('2d'), 'stand', 0, 0, W, H, i, () => true);
+    }
+    pet.body.layout(pet.h / RCFG.SRC_H);
+    try {
+      pet.body.buildArt(pet.partImgs, cloth, cs, hang, over, under, blow,
+        isFinite(blowFrom) ? blowFrom : null, stiff, { arm_L: armL, arm_R: armR }, back);
+    } catch (err) {
+      // Reading the pictures' pixels is refused when the game is opened as a
+      // file:// page (serve it over http, e.g. GitHub Pages). Keep the sprite.
+      console.warn('Ragdoll off (could not read the art):', err && err.message);
+      pet.hasParts = false;
+      pet.body.parts = null;
+    }
+  }
+
+  // Is this pet drawn and moved as a ragdoll right now? A few things still use
+  // the flat sprite: the troll blower (the skirt's wind animation is drawn on
+  // the sprite) and the toy-touched picture.
+  function isRag(pet, i) {
+    if (!RAGDOLL_ON || !pet.body || !pet.hasParts) return false;
+    const now = performance.now();
+    if (window.ClothWind && window.ClothWind.get(i) > 0) pet.spriteUntil = now + 1500;
+    if (pet._toyActive) {
+      const set = baseSets[i] || baseSets[0];
+      if (set.toy && !set.toy._failed && set.toy.complete && set.toy.naturalWidth) pet.spriteUntil = now + 300;
+    }
+    return !(pet.spriteUntil > now);
+  }
+
+  // Is point p on the ragdoll's body? Distance to each bone, as wide as the art.
+  function onRagdoll(pet, p) {
+    const j = pet.body.p, k = pet.body.k;
+    const seg = (a, b, r) => {
+      const A = j[a], B = j[b];
+      if (!A || !B) return false;
+      const dx = B.x - A.x, dy = B.y - A.y, l2 = dx * dx + dy * dy || 1;
+      const t = clamp(((p.x - A.x) * dx + (p.y - A.y) * dy) / l2, 0, 1);
+      return Math.hypot(p.x - (A.x + dx * t), p.y - (A.y + dy * t)) < r * k;
+    };
+    return seg('N', 'P', 95) || seg('SL', 'HL', 45) || seg('SR', 'HR', 45) ||
+      seg('HipL', 'FL', 50) || seg('HipR', 'FR', 50) || seg('N', 'Hd', 120);
+  }
+
+  function hitPet(pet, i, p) {
+    if (isRag(pet, i) && pet.body.parts) return onRagdoll(pet, p);
+    return p.x > pet.x - pet.w / 2 && p.x < pet.x + pet.w / 2 &&
+      p.y > pet.y - pet.h / 2 && p.y < pet.y + pet.h / 2;
+  }
+
+  // Feed the box to the skeleton and step it.
+  function syncBody(pet, i, dtSec) {
+    const body = pet.body;
+    const bx = pet.x - pet.w / 2, by = pet.y - pet.h / 2;
+    if (!pet.placed) {
+      body.box.x = bx; body.box.y = by;
+      body.boxVel.x = 0; body.boxVel.y = 0;
+      body.snapToPose();
+      pet.placed = true;
+    }
+    body.setFloor(groundY);
+    body.setWalls(0, canvas.width, 0);
+    body.setBox(bx, by, performance.now());
+    const held = !!pet.dragging;
+    body.setMode(held, !held && pet.y + pet.h / 2 < groundY - 1);
+    body.tick(dtSec);
+    // A joint that went NaN would lose the pet for good: stand it back up.
+    for (const n in body.p) {
+      if (!isFinite(body.p[n].x) || !isFinite(body.p[n].y)) { pet.placed = false; break; }
+    }
+  }
+
+  pets.forEach(loadParts);
+  if (window.PetGender && typeof window.PetGender.onChange === 'function') {
+    window.PetGender.onChange(() => { if (alive) pets.forEach(loadParts); });
+  }
 
   // === Fly animation ===
   const speed = 10;
@@ -152,14 +338,25 @@
   // Pick top-most pet under pointer
   for (let i = pets.length - 1; i >= 0; i--) {
     const pet = pets[i];
-    if (
-      p.x > pet.x - pet.w / 2 &&
-      p.x < pet.x + pet.w / 2 &&
-      p.y > pet.y - pet.h / 2 &&
-      p.y < pet.y + pet.h / 2
-    ) {
+    if (hitPet(pet, i, p)) {
       pet.dragging = true;
       activePet = pet;
+      // Remember WHERE on the body we grabbed (in the pet's own un-tilted space)
+      // so it hangs from that spot instead of snapping its centre to the pointer.
+      const dx = p.x - pet.x, dy = p.y - pet.y;
+      const c = Math.cos(-pet.angle), sn = Math.sin(-pet.angle);
+      pet.grabX = dx * c - dy * sn;
+      pet.grabY = dx * sn + dy * c;
+      pet.vx = pet.vy = 0;
+      pet.hist = [{ x: p.x, y: p.y, t: performance.now() }];
+      pet.pointer = p;
+      // Ragdoll: the skeleton picks up the joint nearest the pointer, so a pet
+      // grabbed by its hand hangs by that hand.
+      if (isRag(pet, i) && pet.body.parts) {
+        pet.angle = 0; pet.angVel = 0; pet.squash = 0;
+        pet.grabX = p.x - pet.x; pet.grabY = p.y - pet.y;
+        pet.body.grab(p.x, p.y);
+      }
       if (typeof window.setActivePet === 'function') window.setActivePet(i);
       e.preventDefault();
       break;
@@ -170,8 +367,10 @@
   function moveDrag(e) {
     if (!activePet || !activePet.dragging) return;
     const p = getPos(e);
-    activePet.x = p.x;
-    activePet.y = p.y;
+    activePet.pointer = p;
+    const now = performance.now();
+    activePet.hist.push({ x: p.x, y: p.y, t: now });
+    while (activePet.hist.length > 2 && now - activePet.hist[0].t > 200) activePet.hist.shift();
     if (e.touches) e.preventDefault();
   }
 
@@ -186,13 +385,25 @@
 
   function endDrag() {
     if (activePet && activePet.dragging) {
-      activePet.oldx = activePet.x;
-      activePet.oldy = activePet.y;
-      if (activePet.y + activePet.h / 2 > groundY) {
-        activePet.y = groundY - activePet.h / 2;
-        activePet.vy = -Math.max(12, bouncePower * 0.6);
-        playImpactSound(0.5);
+      // Throw: use the pointer's average velocity over the last few ms.
+      const pet = activePet;
+      const now = performance.now();
+      const h = pet.hist.filter(s => now - s.t <= THROW_WINDOW);
+      let tvx = 0, tvy = 0;
+      if (h.length >= 2) {
+        const a = h[0], b = h[h.length - 1];
+        const dt = Math.max(8, b.t - a.t) / 16.667;   // in 60fps frames
+        tvx = (b.x - a.x) / dt;
+        tvy = (b.y - a.y) / dt;
       }
+      // Held still before letting go = just drop it.
+      if (now - (pet.hist[pet.hist.length - 1] || { t: 0 }).t > 80) { tvx = 0; tvy = 0; }
+      pet.vx = clamp(tvx, -MAX_SPEED, MAX_SPEED);
+      pet.vy = clamp(tvy, -MAX_SPEED, MAX_SPEED);
+      pet.angVel = clamp(pet.vx * 0.006, -0.12, 0.12);
+      pet.hist = [];
+      pet.pointer = null;
+      if (pet.body) pet.body.release();
     }
     if (activePet) {
       // Playing with pet boosts happiness
@@ -227,57 +438,154 @@
       if (p.y + p.h / 2 > groundY) {
         p.y = groundY - p.h / 2;
         p.oldy = p.y;
+        p.vy = 0;
       }
     });
   }
   window.addEventListener('resize', onResize);
 
   // === Update ===
+  let lastT = performance.now();
   function update() {
-    for (const pet of pets) {
-      if (pet.dragging) continue;
+    const now = performance.now();
+    // dt in "60fps frames", capped so a background-tab hiccup can't launch pets.
+    const dt = clamp((now - lastT) / 16.667, 0.25, 2.5);
+    lastT = now;
 
-      const vx = (pet.x - pet.oldx) * damping;
-      pet.vy = (pet.y - pet.oldy) * damping;
+    for (let i = 0; i < pets.length; i++) {
+      const pet = pets[i];
+      const halfW = Math.min(pet.w / 2, canvas.width / 2);
+      const halfH = pet.h / 2;
+      const rag = isRag(pet, i);
+      if (rag) buildBody(pet, i);
 
-      const prevBottom = pet.oldy + pet.h / 2;
+      if (pet.dragging && rag && pet.body.parts) {
+        // Ragdoll held: the box sticks to the pointer and the body hangs from
+        // the grabbed joint (the skeleton does the swinging).
+        const p = pet.pointer;
+        if (p) {
+          const nx = clamp(p.x - pet.grabX, halfW, canvas.width - halfW);
+          const ny = clamp(p.y - pet.grabY, halfH, groundY - halfH);
+          pet.vx = (nx - pet.x) / dt;
+          pet.vy = (ny - pet.y) / dt;
+          pet.x = nx; pet.y = ny;
+        }
+        pet.angle = 0; pet.angVel = 0; pet.squash = 0;
+        pet.onGround = false;
+        pet.oldx = pet.x; pet.oldy = pet.y;
+        syncBody(pet, i, dt / 60);
+        continue;
+      }
 
-      pet.oldx = pet.x;
-      pet.oldy = pet.y;
-      pet.x += vx;
+      if (pet.dragging) {
+        // Held: hang from the grab point, chasing the pointer smoothly.
+        const p = pet.pointer;
+        if (p) {
+          const c = Math.cos(pet.angle), sn = Math.sin(pet.angle);
+          const tx = p.x - (pet.grabX * c - pet.grabY * sn);
+          const ty = p.y - (pet.grabX * sn + pet.grabY * c);
+          const k = 1 - Math.pow(1 - FOLLOW, dt);
+          const nx = pet.x + (tx - pet.x) * k;
+          const ny = pet.y + (ty - pet.y) * k;
+          pet.vx = (nx - pet.x) / dt;
+          pet.vy = (ny - pet.y) / dt;
+          pet.x = clamp(nx, halfW, canvas.width - halfW);
+          pet.y = clamp(ny, halfH, groundY - halfH);
+        }
+        // Swing like it's hanging: lean against the motion, plus a bit for
+        // being grabbed off-centre, with a springy, damped return.
+        const lean = clamp(-pet.vx * 0.018 + (pet.grabX / pet.w) * 0.25, -MAX_TILT, MAX_TILT);
+        pet.angVel += (lean - pet.angle) * 0.12 * dt;
+        pet.angVel *= Math.pow(0.86, dt);
+        pet.angle = clamp(pet.angle + pet.angVel * dt, -MAX_TILT, MAX_TILT);
+        pet.squash *= Math.pow(0.8, dt);
+        pet.onGround = false;
+        pet.oldx = pet.x;
+        pet.oldy = pet.y;
+        continue;
+      }
 
-      let vyNext = pet.vy + gravity;
-      let yNext = pet.y + vyNext;
+      const bottomBefore = pet.y + halfH;
+      const grounded = bottomBefore >= groundY - 0.5;
 
-      const nextBottom = yNext + pet.h / 2;
-      const wasAbove = prevBottom < groundY;
-      const willBeBelow = nextBottom >= groundY;
-      const crossingGround = wasAbove && willBeBelow && vyNext > 0;
+      // --- forces ---
+      pet.vy += gravity * dt;
+      const drag = Math.pow(airDrag, dt);
+      pet.vx *= drag;
+      pet.vy *= drag;
+      pet.vx = clamp(pet.vx, -MAX_SPEED, MAX_SPEED);
+      pet.vy = clamp(pet.vy, -MAX_SPEED, MAX_SPEED);
 
-      if (crossingGround) {
-        pet.y = groundY - pet.h / 2;
-        const impactSpeed = vyNext;
-        if (impactSpeed > MIN_IMPACT) {
-          pet.vy = -bouncePower;
-          if (!pet.onGround) {
-            const vol = Math.min(0.2 + (impactSpeed / 30), 1.0);
-            playImpactSound(vol);
+      // --- integrate ---
+      pet.x += pet.vx * dt;
+      pet.y += pet.vy * dt;
+      pet.angle += pet.angVel * dt;
+
+      // --- walls ---
+      if (pet.x < halfW) {
+        pet.x = halfW;
+        if (pet.vx < 0) { pet.vx = -pet.vx * wallRestitution; pet.angVel += 0.03; }
+      } else if (pet.x > canvas.width - halfW) {
+        pet.x = canvas.width - halfW;
+        if (pet.vx > 0) { pet.vx = -pet.vx * wallRestitution; pet.angVel -= 0.03; }
+      }
+
+      // --- ceiling ---
+      if (pet.y < halfH) {
+        pet.y = halfH;
+        if (pet.vy < 0) pet.vy = -pet.vy * 0.3;
+      }
+
+      // --- floor ---
+      pet.onGround = false;
+      if (pet.y + halfH >= groundY) {
+        const impact = pet.vy;
+        pet.y = groundY - halfH;
+        if (impact > REST_SPEED) {
+          pet.vy = -impact * restitution;
+          if (pet.vy > -REST_SPEED) pet.vy = 0;   // too weak to bounce again
+          if (impact > MIN_IMPACT) {
+            if (!grounded) playImpactSound(clamp(0.15 + impact / 40, 0.15, 1));
+            // The ragdoll's limbs, head and chest are thrown down by the hit.
+            if (rag && pet.body.parts) pet.body.impact((impact * 60) / (1800 * pet.h / 250));
+            pet.squash = Math.max(pet.squash, clamp(impact / 200, 0.03, MAX_SQUASH));
+            // Landing off-balance makes it wobble.
+            pet.angVel += clamp(pet.vx * 0.004, -0.08, 0.08);
           }
         } else {
           pet.vy = 0;
         }
         pet.onGround = true;
-      } else {
-        pet.y = yNext;
-        if (pet.y + pet.h / 2 > groundY) {
-          pet.y = groundY - pet.h / 2;
-          pet.vy = 0;
-          pet.onGround = true;
-        } else {
-          pet.vy = vyNext;
-          pet.onGround = false;
-        }
       }
+
+      if (pet.onGround) {
+        // Friction slows a slide to a stop instead of gliding forever.
+        pet.vx *= Math.pow(groundFriction, dt);
+        if (Math.abs(pet.vx) < 0.05) pet.vx = 0;
+        // Pull back upright, springy and damped, so it settles with a wobble.
+        pet.angVel += -pet.angle * 0.14 * dt;
+        pet.angVel *= Math.pow(0.82, dt);
+      } else {
+        // Tumbling in the air slowly loses spin.
+        pet.angVel *= Math.pow(0.985, dt);
+        // ...and drifts toward upright so it never stays sideways forever.
+        pet.angVel += -pet.angle * 0.004 * dt;
+      }
+      pet.angle = clamp(pet.angle, -MAX_TILT, MAX_TILT);
+      if (Math.abs(pet.angle) < 0.001 && Math.abs(pet.angVel) < 0.001) { pet.angle = 0; pet.angVel = 0; }
+
+      // Squash springs back.
+      pet.squash *= Math.pow(0.82, dt);
+      if (pet.squash < 0.002) pet.squash = 0;
+
+      if (rag && pet.body.parts) {
+        // The skeleton does the tumbling and the landing squash itself.
+        pet.angle = 0; pet.angVel = 0; pet.squash = 0;
+        syncBody(pet, i, dt / 60);
+      }
+
+      pet.oldx = pet.x;
+      pet.oldy = pet.y;
     }
   }
 
@@ -291,7 +599,7 @@
     let state = 'stand';
 
     if (pet.y + pet.h / 2 < groundY) {
-      if (pet.vy > 5) {
+      if (pet.vy > 8) {
         state = 'fall';
       } else {
         pet.timer++;
@@ -332,8 +640,26 @@
         if (toyImg && !toyImg._failed) img = toyImg;
       }
 
+      if (isRag(pet, i) && pet.body && pet.body.parts) {
+        ctx.save();
+        pet.body.draw(ctx, 0, 0, hdDpr());
+        ctx.restore();
+        return;
+      }
+
       ctx.save();
       ctx.filter = useTintFallback ? pet.drawFilter : 'none';
+
+      // Tilt about the centre, then squash/stretch anchored at the feet.
+      const sq = pet.squash || 0;
+      if (pet.angle || sq) {
+        ctx.translate(pet.x, pet.y);
+        ctx.rotate(pet.angle);
+        ctx.translate(0, pet.h / 2);
+        ctx.scale(1 + sq * 0.6, 1 - sq);
+        ctx.translate(0, -pet.h / 2);
+        ctx.translate(-pet.x, -pet.y);
+      }
 
       // Back pieces (behind the body)
       if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(ctx, state, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h, i);
@@ -398,6 +724,7 @@
 
   // === Cleanup ===
   window._modeCleanup = function () {
+    alive = false;
     cancelAnimationFrame(raf);
     listeners.forEach(([ev, fn]) => canvas.removeEventListener(ev, fn));
     window.removeEventListener('resize', onResize);

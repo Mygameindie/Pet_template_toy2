@@ -48,3 +48,22 @@ other pets add their `artSuffix` (`base_2.png`, `base_sick_2.png`,
 `skirt1_2.png`, ...). If a pet's art file is missing, the engine
 draws pet 1's art with that pet's `drawFilter` tint so it still
 looks like a different character.
+
+## Ragdoll (ported from Computer-pet)
+
+In normal mode a character is a skeleton instead of a flat picture when every
+required body part exists in `images/parts/` (`head`, `body`, `arm_L`, `arm_R`,
+`leg_L`, `leg_R`; optional `chest_L/R`, `back_hair`, `back_wings`, `back_tail`;
+character 2 adds `_2`, e.g. `head_2.png`). Pick it up by a hand and it hangs by
+that hand, throw it and it tumbles limp, then gets back up. A character without
+a full set keeps its normal sprite. Turn it off with `ragdoll: false` in
+`game_config.js`.
+
+- `engine/ragdoll_config.js` — joints, limb limits, and which canvas area of a
+  garment moves with which body part.
+- `engine/ragdoll.js` — the physics and the code that cuts the clothes up.
+- Drawing parts: `sprite_template/README.md`. Drawing clothes:
+  `clothing_template/README.md` (incl. the `hangs` / `blows` / `stiff` flags
+  and the optional `_over`, `_under`, `_arm_L`, `_arm_R` pictures).
+- The other modes draw `base.png`. It is the parts stacked in the standing
+  pose, so keep it in sync when you redraw a part.
