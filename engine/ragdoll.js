@@ -41,6 +41,9 @@
   const SKIRT_FULL = 1400;         // px/s at which it is blown right up
   const SKIRT_WIDEN = 0.7;         // how much wider it billows, fully blown
   const SKIRT_FOLD = 0.7;          // how much shorter (lifted up toward the hips) it gets, fully blown
+  const LEG_FOLLOW = 0.85;          // how much of a leg's swing a skirt's hem takes (0..1)
+  const TILE = 6;                  // px (device) of the tiles a bending layer is drawn in
+  const OVERLAP = 3;               // px (device) each tile reaches into the next one
   const HELD_SWING_MAX = 1200;    // px/s (at the default pet size) a held body may move round the held point
   const HELD_STILL_STEPS = 30;    // steps (half a second) without the box moving before that kicks in
 
@@ -674,6 +677,57 @@
       };
 
       const regionParts = CFG.parts.filter(p => hasRegion(p) && imgs[p.file]);
+
+      // A layer that bends while drawn is cut into small tiles; each tile is
+      // moved on its own (see drawTiles), weighted by where it sits on the body.
+      // c: the layer's canvas, (ox, oy): its pivot inside it, weigh(ax, ay) gets
+      // the tile's centre in source px and returns its weights.
+      const tilesOf = (c, ox, oy, pivot, weigh) => {
+        const W = c.width, H = c.height;
+        const d = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+        const T = Math.max(3, Math.round(TILE * Math.max(1, cs / 1.2)));
+        const pv = CFG.particles[pivot];
+        const tiles = [];
+        for (let y = 0; y < H; y += T) {
+          for (let x = 0; x < W; x += T) {
+            const w = Math.min(T, W - x), h = Math.min(T, H - y);
+            let any = false;
+            for (let yy = y; yy < y + h && !any; yy++) {
+              for (let xx = x; xx < x + w; xx++) if (d[(yy * W + xx) * 4 + 3]) { any = true; break; }
+            }
+            if (!any) continue;
+            const sx = (x + w / 2 - ox) / cs, sy = (y + h / 2 - oy) / cs;   // source px from the pivot
+            const wt = weigh(pv.x + sx, pv.y + sy);
+            if (!wt) continue;
+            tiles.push(Object.assign({ x, y, w, h, sx, sy }, wt));
+          }
+        }
+        return tiles;
+      };
+      // Skirt-like layers: the waistband stays on the body and, further down,
+      // each side follows its own leg (the middle follows both, halfway).
+      const legTiles = (c, ox, oy, topY, botY) => tilesOf(c, ox, oy, 'P', (ax, ay) => {
+        const t = Math.max(0, Math.min(1, (ay - topY) / Math.max(1, botY - topY)));
+        const f = LEG_FOLLOW * Math.pow(t, 1.2);
+        const u = (ax - CFG.particles.P.x) / 60;            // -1 left leg .. +1 right leg
+        const left = Math.max(0, Math.min(1, 0.5 - 0.5 * u));
+        return { wl: f * left, wr: f * (1 - left) };
+      });
+      // The over-the-chest layer: fully on the chest inside its circle, fading
+      // out to nothing toward the shoulders, so straps stretch instead of tearing.
+      const chestParts = CFG.parts.filter(p => p.offset && p.region && p.region.t === 'ellipse' && imgs[p.file]);
+      const chestTiles = (c, ox, oy) => tilesOf(c, ox, oy, 'N', (ax, ay) => {
+        const wt = {};
+        let any = false;
+        for (const q of chestParts) {
+          const r = q.region;
+          const e = Math.hypot((ax - r.cx) / r.rx, (ay - r.cy) / r.ry);
+          const v = e <= 0.8 ? 1 : e >= 1.7 ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * (e - 0.8) / 0.9);
+          wt[q.offset] = v;
+          if (v > 0) any = true;
+        }
+        return any ? { wc: wt } : { wc: null };
+      });
       // The blowing part of a skirt: its pixels below the waistband line.
       let blowMask = null, blowY = 0;
       if (blow && cloth) {
@@ -690,6 +744,7 @@
       const carried = CFG.parts.filter(p => p.carry && imgs[p.file]);
       const bodyPart = CFG.parts.find(p => p.rest);
       const bodyImg = bodyPart && imgs[bodyPart.file];
+      let hangCut = null;                  // what hangs over the legs, cut out in the loop below
       const out = [];
       for (const part of CFG.parts) {
         const img = imgs[part.file];
@@ -768,8 +823,8 @@
               const legs = mkRead(CW, CH);
               for (const o of regionParts) if (o.drop) shape(legs.x, o.region);
               h.x.drawImage(legs.c, 0, 0);
-              w.x.globalCompositeOperation = 'source-over';
-              w.x.drawImage(h.c, 0, 0);
+              // Its own part (built after this loop), so it can bend with the legs.
+              hangCut = h.c;
             }
             // ...and a blowing skirt's waistband. (Below that it is the skirt
             // part, built after this loop.)
@@ -825,10 +880,28 @@
           c.getContext('2d').drawImage(h.c, -bx.x0, -bx.y0);
           const pv = CFG.particles.P, ch = CFG.particles.N;
           const at = out.findIndex(o => o.id === 'body') + 1;
+          const ox = pv.x * cs - bx.x0, oy = pv.y * cs - bx.y0;
           out.splice(at, 0, {
             id: 'skirt', pivot: 'P', child: 'N', canvas: c, flare: blowY / cs,
-            ox: pv.x * cs - bx.x0, oy: pv.y * cs - bx.y0,
-            restAngle: Math.atan2(ch.y - pv.y, ch.x - pv.x),
+            ox, oy, restAngle: Math.atan2(ch.y - pv.y, ch.x - pv.x),
+            tiles: legTiles(c, ox, oy, bx.y0 / cs, bx.y1 / cs),
+          });
+        }
+      }
+      // What hangs from the hips over the legs (panties, a skirt or dress that
+      // doesn't blow): drawn right after the body, under a blowing skirt, and
+      // bent with the legs like the skirt.
+      if (hangCut) {
+        const hb = bboxOf(hangCut.getContext('2d', { willReadFrequently: true }));
+        if (hb) {
+          const c = mk(hb.x1 - hb.x0, hb.y1 - hb.y0);
+          c.getContext('2d').drawImage(hangCut, -hb.x0, -hb.y0);
+          const pv = CFG.particles.P, ch = CFG.particles.N;
+          const ox = pv.x * cs - hb.x0, oy = pv.y * cs - hb.y0;
+          out.splice(out.findIndex(o => o.id === 'body') + 1, 0, {
+            id: 'hang', pivot: 'P', child: 'N', canvas: c,
+            ox, oy, restAngle: Math.atan2(ch.y - pv.y, ch.x - pv.x),
+            tiles: legTiles(c, ox, oy, hb.y0 / cs, hb.y1 / cs),
           });
         }
       }
@@ -860,10 +933,14 @@
         const pv = CFG.particles.N, ch = CFG.particles.P;
         let at = out.length;
         for (let i = out.length - 1; i >= 0; i--) if (out[i].offset || out[i].id === 'body') { at = i + 1; break; }
+        const ox = pv.x * cs - b.x0, oy = pv.y * cs - b.y0;
+        const tiles = chestParts.length ? chestTiles(c, ox, oy) : null;
         out.splice(at, 0, {
           id: 'body_over', pivot: 'N', child: 'P', canvas: c,
-          ox: pv.x * cs - b.x0, oy: pv.y * cs - b.y0,
-          restAngle: Math.atan2(ch.y - pv.y, ch.x - pv.x),
+          ox, oy, restAngle: Math.atan2(ch.y - pv.y, ch.x - pv.x),
+          // Tiles off the chest don't move, so they are kept whole in `tiles`
+          // too (weight null): every tile is drawn, moved or not.
+          tiles,
         });
       }
       // Sleeves: each arm's clothing is its own picture, drawn above the body and
@@ -953,7 +1030,8 @@
           ctx.scale(1 + SKIRT_WIDEN * lift, 1 - SKIRT_FOLD * lift);
           ctx.translate(0, -hy);
         }
-        ctx.drawImage(part.canvas, -part.ox * inv, -part.oy * inv, part.canvas.width * inv, part.canvas.height * inv);
+        if (part.tiles) this.drawTiles(ctx, part, inv, ang, th);
+        else ctx.drawImage(part.canvas, -part.ox * inv, -part.oy * inv, part.canvas.width * inv, part.canvas.height * inv);
         ctx.restore();
         placed[part.id] = { x: ax, y: ay, ang, pivot: part.pivot };
         if (part.id === 'body') this.drawShoulders(ctx, originX, originY, th, placed, 'armpits');
@@ -962,6 +1040,46 @@
       // the shoulders, and drawn under it the lines vanished, leaving the arms
       // looking stuck straight into the chest.
       this.drawShoulders(ctx, originX, originY, th, placed, 'shoulders');
+    }
+
+    // Draw a bending layer tile by tile, in its part's frame (already
+    // translated to the pivot and turned by `ang`). Each tile moves by:
+    //  - the chest's bounce (wc), turned into the part's frame, and/or
+    //  - the turn of each leg about its hip relative to the torso (wl / wr).
+    drawTiles(ctx, part, inv, ang, th) {
+      const k = this.k;
+      const ca = Math.cos(-ang), sa = Math.sin(-ang);
+      const chest = {};
+      for (const n of SOFT) {
+        if (!CFG.soft[n] || CFG.soft[n].anchor !== 'torso') continue;
+        const t = this.softTarget(n), j = this.p[n];
+        const dx = j.x - t.x, dy = j.y - t.y;
+        chest[n] = { x: dx * ca - dy * sa, y: dx * sa + dy * ca };   // screen -> part frame
+      }
+      const pv = CFG.particles[part.pivot];
+      const leg = (hip, foot) => {
+        const phi = wrap(this.ang(hip, foot) - this.restAng(hip, foot) - th);
+        const H = CFG.particles[hip];
+        return { c: Math.cos(phi), s: Math.sin(phi), hx: H.x - pv.x, hy: H.y - pv.y };
+      };
+      const L = leg('HipL', 'FL'), R = leg('HipR', 'FR');
+      const turn = (g, sx, sy, w) => {
+        const rx = sx - g.hx, ry = sy - g.hy;
+        return [(g.hx + rx * g.c - ry * g.s - sx) * w, (g.hy + rx * g.s + ry * g.c - sy) * w];
+      };
+      const cv = part.canvas, CWc = cv.width, CHc = cv.height;
+      for (const t of part.tiles) {
+        let dx = 0, dy = 0;
+        if (t.wc) {
+          for (const n in t.wc) { const d = chest[n]; if (d) { dx += d.x * t.wc[n]; dy += d.y * t.wc[n]; } }
+        }
+        if (t.wl) { const m = turn(L, t.sx, t.sy, t.wl); dx += m[0] * k; dy += m[1] * k; }
+        if (t.wr) { const m = turn(R, t.sx, t.sy, t.wr); dx += m[0] * k; dy += m[1] * k; }
+        // Tiles overlap by a few device px: a rotated tile's edge is soft, and
+        // with too little overlap those soft edges show as faint lines.
+        const w = Math.min(t.w + OVERLAP, CWc - t.x), h = Math.min(t.h + OVERLAP, CHc - t.y);
+        ctx.drawImage(cv, t.x, t.y, w, h, (t.x - part.ox) * inv + dx, (t.y - part.oy) * inv + dy, w * inv, h * inv);
+      }
     }
 
     // Redraw each shoulder line from the neck (on the body) to the arm, wherever
