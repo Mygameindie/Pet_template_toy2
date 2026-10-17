@@ -196,6 +196,39 @@
   }
   function pet_h_sig() { return pets.map(p => p.h).join(','); }
 
+  // Does a garment cover the chest (a top, a dress, a bra)? Those are kept in
+  // one piece over the chest and stretch with its bounce, instead of being cut
+  // along the chest's outline (which tore them where the cut moved).
+  const chestCover = new Map();
+  function coversChest(it) {
+    const im = it && it.img;
+    if (!im || im._failed || !im.complete || !im.naturalWidth) return false;
+    if (chestCover.has(im.src)) return chestCover.get(im.src);
+    let hit = false;
+    try {
+      const S = 0.25, W = Math.round(RCFG.SRC_W * S), H = Math.round(RCFG.SRC_H * S);
+      const c = document.createElement('canvas'); c.width = W; c.height = H;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(im, 0, 0, W, H);
+      const d = x.getImageData(0, 0, W, H).data;
+      for (const q of RCFG.parts) {
+        const r = q.region;
+        if (!q.offset || !r || r.t !== 'ellipse') continue;
+        let n = 0, tot = 0;
+        for (let yy = Math.floor((r.cy - r.ry) * S); yy <= (r.cy + r.ry) * S; yy++) {
+          for (let xx = Math.floor((r.cx - r.rx) * S); xx <= (r.cx + r.rx) * S; xx++) {
+            if (((xx / S - r.cx) / r.rx) ** 2 + ((yy / S - r.cy) / r.ry) ** 2 > 1) continue;
+            tot++;
+            if (d[(yy * W + xx) * 4 + 3] > 40) n++;
+          }
+        }
+        if (tot && n / tot > 0.2) hit = true;
+      }
+    } catch (_) { /* pixels unreadable: cut it the old way */ }
+    chestCover.set(im.src, hit);
+    return hit;
+  }
+
   // Cut the clothes up along the body parts and hand them to the skeleton.
   // Only redone when the outfit or the art changes.
   function buildBody(pet, i) {
@@ -210,7 +243,8 @@
     let blowFrom = Infinity;
     const D = window.drawOutfitOverlay;
     if (typeof D === 'function') {
-      D(cloth.getContext('2d'), 'stand', 0, 0, W, H, i, it => !it.stiff && !it.blows);
+      const covers = it => !it.stiff && coversChest(it);
+      D(cloth.getContext('2d'), 'stand', 0, 0, W, H, i, it => !it.stiff && !it.blows && !(covers(it) && !it.hangs));
       D(hang.getContext('2d'), 'stand', 0, 0, W, H, i, it => (it.hangs || it.blows) && !it.stiff);
       D(blow.getContext('2d'), 'stand', 0, 0, W, H, i, it => {
         if (!it.blows || it.stiff) return false;
@@ -218,7 +252,22 @@
         return true;
       });
       D(over.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'over');
-      D(stiff.getContext('2d'), 'stand', 0, 0, W, H, i, it => it.stiff);
+      const sx = stiff.getContext('2d');
+      D(sx, 'stand', 0, 0, W, H, i, it => it.stiff || (covers(it) && !it.hangs && !it.blows));
+      // A dress (or other hanging garment) that covers the chest: its top half
+      // goes over the chest like a top, its skirt still hangs / blows.
+      const tops = sized(), tx = tops.getContext('2d');
+      let topLine = Infinity;
+      D(tx, 'stand', 0, 0, W, H, i, it => {
+        if (!covers(it) || !(it.hangs || it.blows)) return false;
+        const cut = typeof it.blows === 'number' ? it.blows : RCFG.particles.HipL.y;
+        topLine = Math.min(topLine, cut);
+        return true;
+      });
+      if (isFinite(topLine)) {
+        tx.clearRect(0, Math.round(topLine * cs), W, H);
+        sx.drawImage(tops, 0, 0);
+      }
       D(under.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'under');
       D(armL.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'armL');
       D(armR.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'armR');

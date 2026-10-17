@@ -42,8 +42,12 @@
   const SKIRT_WIDEN = 0.7;         // how much wider it billows, fully blown
   const SKIRT_FOLD = 0.7;          // how much shorter (lifted up toward the hips) it gets, fully blown
   const LEG_FOLLOW = 0.85;          // how much of a leg's swing a skirt's hem takes (0..1)
-  const TILE = 6;                  // px (device) of the tiles a bending layer is drawn in
-  const OVERLAP = 3;               // px (device) each tile reaches into the next one
+  const MESH = 12;                 // px (device) between the points of a bending layer's mesh
+  const HEM_K = 0.07;              // how hard a skirt's hem is pulled toward where it hangs (per step)
+  const HEM_DAMP = 0.86;           // share of the hem's swing kept per step
+  const HEM_INERTIA = 0.0035;      // how much the hem lags when the hips are pushed sideways
+  const HEM_DRAPE = 0.45;          // how far the hem swings toward the floor when the body tilts
+  const HEM_MAX = 1.2;             // radians the hem may swing either way
   const HELD_SWING_MAX = 1200;    // px/s (at the default pet size) a held body may move round the held point
   const HELD_STILL_STEPS = 30;    // steps (half a second) without the box moving before that kicks in
 
@@ -83,6 +87,8 @@
       this.groundT = 0;                    // seconds on the floor since it was last held or airborne
       this.up = null;                      // getting up: how far the standing pose is still turned/shifted
       this.skirtLift = 0;                  // 0..1, how far the air has blown the skirt up (see blowSkirt)
+      this.hem = { L: { a: 0, v: 0 }, R: { a: 0, v: 0 } };   // each side of a skirt's swing about its hip (see swingHem)
+      this.hipVel = null;
       this.pin = null;
       this.settled = false;
       this.acc = 0;
@@ -125,6 +131,8 @@
     snapToPose() {
       this.up = null;
       this.skirtLift = 0;
+      this.hem = { L: { a: 0, v: 0 }, R: { a: 0, v: 0 } };
+      this.hipVel = null;
       for (const n of SKEL) {
         const t = this.target(n);
         this.p[n] = { x: t.x, y: t.y, px: t.x, py: t.y };
@@ -355,6 +363,7 @@
 
       this.capHeldSwing(dt);
       this.blowSkirt(dt);
+      this.swingHem();
       this.checkSettled();
     }
 
@@ -365,10 +374,34 @@
       const n = this.p.N, pl = this.p.P;
       const ax = pl.x - n.x, ay = pl.y - n.y, al = Math.hypot(ax, ay) || 1;
       const v = ((pl.x - pl.px) * ax + (pl.y - pl.py) * ay) / al / dt / (this.k / (250 / 1134));
-      const want = Math.max(0, Math.min(1, (v - SKIRT_FROM) / (SKIRT_FULL - SKIRT_FROM)));
+      let want = Math.max(0, Math.min(1, (v - SKIRT_FROM) / (SKIRT_FULL - SKIRT_FROM)));
+      // Upside down, a skirt falls over toward the waist (the same fold, made by gravity).
+      const upside = -Math.cos(this.frameAngle('torso'));
+      want = Math.max(want, Math.max(0, Math.min(1, (upside - 0.2) / 0.7)) * 0.9);
       const rate = want > this.skirtLift ? 12 : 4;
       this.skirtLift += (want - this.skirtLift) * Math.min(1, rate * dt);
       if (this.skirtLift < 0.002) this.skirtLift = 0;
+    }
+
+    // A skirt's hem is cloth, not part of the legs: each side swings about its
+    // hip on a spring toward where it would hang (most of its leg's turn, plus a
+    // drape toward the floor when the body tilts), lags behind when the hips are
+    // pushed sideways, overshoots and settles.
+    swingHem() {
+      const th = this.frameAngle('torso');
+      const P = this.p.P, vx = P.x - P.px, vy = P.y - P.py;
+      const lv = this.hipVel || { x: vx, y: vy };
+      this.hipVel = { x: vx, y: vy };
+      // Sideways push on the hips, along the torso's own left-right axis, in source px.
+      const side = ((vx - lv.x) * Math.cos(th) + (vy - lv.y) * Math.sin(th)) / this.k;
+      const drape = -Math.sin(th) * HEM_DRAPE;
+      for (const [s, hip, foot] of [['L', 'HipL', 'FL'], ['R', 'HipR', 'FR']]) {
+        const H = this.hem[s];
+        const leg = wrap(this.ang(hip, foot) - this.restAng(hip, foot) - th);
+        H.v += (LEG_FOLLOW * leg + drape - H.a) * HEM_K + side * HEM_INERTIA;
+        H.v *= HEM_DAMP;
+        H.a = Math.max(-HEM_MAX, Math.min(HEM_MAX, H.a + H.v));
+      }
     }
 
     // A body hanging from the cursor swings round the held point like a
@@ -583,6 +616,11 @@
         worst = Math.max(worst, Math.hypot(j.x - t.x, j.y - t.y));
       }
       for (const n of ALL) { const j = this.p[n]; fast = Math.max(fast, Math.hypot(j.x - j.px, j.y - j.py)); }
+      for (const s in this.hem) {
+        // A hem still swinging (measured at the hem: about 40 source px from the hip).
+        worst = Math.max(worst, Math.abs(this.hem[s].a) * 40 * this.k);
+        fast = Math.max(fast, Math.abs(this.hem[s].v) * 40 * this.k);
+      }
       if (worst < SETTLE_DIST && fast < SETTLE_SPEED && Math.hypot(this.boxVel.x, this.boxVel.y) < 1) {
         this.snapToPose();
       }
@@ -678,55 +716,59 @@
 
       const regionParts = CFG.parts.filter(p => hasRegion(p) && imgs[p.file]);
 
-      // A layer that bends while drawn is cut into small tiles; each tile is
-      // moved on its own (see drawTiles), weighted by where it sits on the body.
+      // A layer that bends while drawn gets a mesh: a grid of points laid over
+      // its picture, each with weights for how it follows the body (see
+      // drawMesh). Only the grid cells with something in them are kept.
       // c: the layer's canvas, (ox, oy): its pivot inside it, weigh(ax, ay) gets
-      // the tile's centre in source px and returns its weights.
-      const tilesOf = (c, ox, oy, pivot, weigh) => {
+      // a point in source px and returns its weights.
+      const meshOf = (c, ox, oy, pivot, weigh) => {
         const W = c.width, H = c.height;
         const d = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
-        const T = Math.max(3, Math.round(TILE * Math.max(1, cs / 1.2)));
+        const G = Math.max(6, Math.round(MESH * Math.max(1, cs / 1.2)));
+        const nx = Math.ceil(W / G), ny = Math.ceil(H / G);
         const pv = CFG.particles[pivot];
-        const tiles = [];
-        for (let y = 0; y < H; y += T) {
-          for (let x = 0; x < W; x += T) {
-            const w = Math.min(T, W - x), h = Math.min(T, H - y);
-            let any = false;
-            for (let yy = y; yy < y + h && !any; yy++) {
-              for (let xx = x; xx < x + w; xx++) if (d[(yy * W + xx) * 4 + 3]) { any = true; break; }
-            }
-            if (!any) continue;
-            const sx = (x + w / 2 - ox) / cs, sy = (y + h / 2 - oy) / cs;   // source px from the pivot
-            const wt = weigh(pv.x + sx, pv.y + sy);
-            if (!wt) continue;
-            tiles.push(Object.assign({ x, y, w, h, sx, sy }, wt));
+        const pts = [];
+        for (let j = 0; j <= ny; j++) {
+          for (let i = 0; i <= nx; i++) {
+            const u = Math.min(W, i * G), v = Math.min(H, j * G);
+            const sx = (u - ox) / cs, sy = (v - oy) / cs;          // source px from the pivot
+            pts.push(Object.assign({ u, v, sx, sy }, weigh(pv.x + sx, pv.y + sy)));
           }
         }
-        return tiles;
+        const cells = [];
+        for (let j = 0; j < ny; j++) {
+          for (let i = 0; i < nx; i++) {
+            const x0 = i * G, y0 = j * G, x1 = Math.min(W, x0 + G), y1 = Math.min(H, y0 + G);
+            let any = false;
+            for (let y = y0; y < y1 && !any; y++) {
+              for (let x = x0; x < x1; x++) if (d[(y * W + x) * 4 + 3]) { any = true; break; }
+            }
+            if (any) cells.push(j * (nx + 1) + i);
+          }
+        }
+        return { nx, pts, cells };
       };
       // Skirt-like layers: the waistband stays on the body and, further down,
-      // each side follows its own leg (the middle follows both, halfway).
-      const legTiles = (c, ox, oy, topY, botY) => tilesOf(c, ox, oy, 'P', (ax, ay) => {
+      // each side swings with its hem (the middle with both, halfway).
+      const legMesh = (c, ox, oy, topY, botY) => meshOf(c, ox, oy, 'P', (ax, ay) => {
         const t = Math.max(0, Math.min(1, (ay - topY) / Math.max(1, botY - topY)));
-        const f = LEG_FOLLOW * Math.pow(t, 1.2);
+        const f = Math.pow(t, 1.2);
         const u = (ax - CFG.particles.P.x) / 60;            // -1 left leg .. +1 right leg
         const left = Math.max(0, Math.min(1, 0.5 - 0.5 * u));
         return { wl: f * left, wr: f * (1 - left) };
       });
       // The over-the-chest layer: fully on the chest inside its circle, fading
-      // out to nothing toward the shoulders, so straps stretch instead of tearing.
+      // out to nothing toward the shoulders and the belly, so a top or a bra
+      // stretches with the bounce instead of tearing.
       const chestParts = CFG.parts.filter(p => p.offset && p.region && p.region.t === 'ellipse' && imgs[p.file]);
-      const chestTiles = (c, ox, oy) => tilesOf(c, ox, oy, 'N', (ax, ay) => {
+      const chestMesh = (c, ox, oy) => meshOf(c, ox, oy, 'N', (ax, ay) => {
         const wt = {};
-        let any = false;
         for (const q of chestParts) {
           const r = q.region;
           const e = Math.hypot((ax - r.cx) / r.rx, (ay - r.cy) / r.ry);
-          const v = e <= 0.8 ? 1 : e >= 1.7 ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * (e - 0.8) / 0.9);
-          wt[q.offset] = v;
-          if (v > 0) any = true;
+          wt[q.offset] = e <= 0.75 ? 1 : e >= 1.8 ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * (e - 0.75) / 1.05);
         }
-        return any ? { wc: wt } : { wc: null };
+        return { wc: wt };
       });
       // The blowing part of a skirt: its pixels below the waistband line.
       let blowMask = null, blowY = 0;
@@ -884,7 +926,7 @@
           out.splice(at, 0, {
             id: 'skirt', pivot: 'P', child: 'N', canvas: c, flare: blowY / cs,
             ox, oy, restAngle: Math.atan2(ch.y - pv.y, ch.x - pv.x),
-            tiles: legTiles(c, ox, oy, bx.y0 / cs, bx.y1 / cs),
+            mesh: legMesh(c, ox, oy, bx.y0 / cs, bx.y1 / cs),
           });
         }
       }
@@ -901,7 +943,7 @@
           out.splice(out.findIndex(o => o.id === 'body') + 1, 0, {
             id: 'hang', pivot: 'P', child: 'N', canvas: c,
             ox, oy, restAngle: Math.atan2(ch.y - pv.y, ch.x - pv.x),
-            tiles: legTiles(c, ox, oy, hb.y0 / cs, hb.y1 / cs),
+            mesh: legMesh(c, ox, oy, hb.y0 / cs, hb.y1 / cs),
           });
         }
       }
@@ -934,13 +976,11 @@
         let at = out.length;
         for (let i = out.length - 1; i >= 0; i--) if (out[i].offset || out[i].id === 'body') { at = i + 1; break; }
         const ox = pv.x * cs - b.x0, oy = pv.y * cs - b.y0;
-        const tiles = chestParts.length ? chestTiles(c, ox, oy) : null;
+        const mesh = chestParts.length ? chestMesh(c, ox, oy) : null;
         out.splice(at, 0, {
           id: 'body_over', pivot: 'N', child: 'P', canvas: c,
           ox, oy, restAngle: Math.atan2(ch.y - pv.y, ch.x - pv.x),
-          // Tiles off the chest don't move, so they are kept whole in `tiles`
-          // too (weight null): every tile is drawn, moved or not.
-          tiles,
+          mesh,
         });
       }
       // Sleeves: each arm's clothing is its own picture, drawn above the body and
@@ -1030,8 +1070,9 @@
           ctx.scale(1 + SKIRT_WIDEN * lift, 1 - SKIRT_FOLD * lift);
           ctx.translate(0, -hy);
         }
-        if (part.tiles) this.drawTiles(ctx, part, inv, ang, th);
-        else ctx.drawImage(part.canvas, -part.ox * inv, -part.oy * inv, part.canvas.width * inv, part.canvas.height * inv);
+        if (!(part.mesh && this.drawMesh(ctx, part, inv, ang))) {
+          ctx.drawImage(part.canvas, -part.ox * inv, -part.oy * inv, part.canvas.width * inv, part.canvas.height * inv);
+        }
         ctx.restore();
         placed[part.id] = { x: ax, y: ay, ang, pivot: part.pivot };
         if (part.id === 'body') this.drawShoulders(ctx, originX, originY, th, placed, 'armpits');
@@ -1042,12 +1083,15 @@
       this.drawShoulders(ctx, originX, originY, th, placed, 'shoulders');
     }
 
-    // Draw a bending layer tile by tile, in its part's frame (already
-    // translated to the pivot and turned by `ang`). Each tile moves by:
+    // Draw a bending layer through its mesh, in its part's frame (already
+    // translated to the pivot and turned by `ang`). Each mesh point moves by:
     //  - the chest's bounce (wc), turned into the part's frame, and/or
-    //  - the turn of each leg about its hip relative to the torso (wl / wr).
-    drawTiles(ctx, part, inv, ang, th) {
-      const k = this.k;
+    //  - its side of the skirt's hem swinging about that hip (wl / wr).
+    // Every cell is drawn as two triangles, each stretched from the picture to
+    // where its corners went, so the layer bends smoothly with no gaps.
+    // Returns false (draw it flat) when nothing has moved.
+    drawMesh(ctx, part, inv, ang) {
+      const k = this.k, M = part.mesh, pts = M.pts;
       const ca = Math.cos(-ang), sa = Math.sin(-ang);
       const chest = {};
       for (const n of SOFT) {
@@ -1057,29 +1101,70 @@
         chest[n] = { x: dx * ca - dy * sa, y: dx * sa + dy * ca };   // screen -> part frame
       }
       const pv = CFG.particles[part.pivot];
-      const leg = (hip, foot) => {
-        const phi = wrap(this.ang(hip, foot) - this.restAng(hip, foot) - th);
-        const H = CFG.particles[hip];
-        return { c: Math.cos(phi), s: Math.sin(phi), hx: H.x - pv.x, hy: H.y - pv.y };
-      };
-      const L = leg('HipL', 'FL'), R = leg('HipR', 'FR');
-      const turn = (g, sx, sy, w) => {
-        const rx = sx - g.hx, ry = sy - g.hy;
-        return [(g.hx + rx * g.c - ry * g.s - sx) * w, (g.hy + rx * g.s + ry * g.c - sy) * w];
-      };
-      const cv = part.canvas, CWc = cv.width, CHc = cv.height;
-      for (const t of part.tiles) {
-        let dx = 0, dy = 0;
-        if (t.wc) {
-          for (const n in t.wc) { const d = chest[n]; if (d) { dx += d.x * t.wc[n]; dy += d.y * t.wc[n]; } }
-        }
-        if (t.wl) { const m = turn(L, t.sx, t.sy, t.wl); dx += m[0] * k; dy += m[1] * k; }
-        if (t.wr) { const m = turn(R, t.sx, t.sy, t.wr); dx += m[0] * k; dy += m[1] * k; }
-        // Tiles overlap by a few device px: a rotated tile's edge is soft, and
-        // with too little overlap those soft edges show as faint lines.
-        const w = Math.min(t.w + OVERLAP, CWc - t.x), h = Math.min(t.h + OVERLAP, CHc - t.y);
-        ctx.drawImage(cv, t.x, t.y, w, h, (t.x - part.ox) * inv + dx, (t.y - part.oy) * inv + dy, w * inv, h * inv);
+      const hip = n => ({ x: CFG.particles[n].x - pv.x, y: CFG.particles[n].y - pv.y });
+      const HL = hip('HipL'), HR = hip('HipR');
+      const aL = this.hem.L.a, aR = this.hem.R.a;
+      // Where each point goes, in the part's frame, CSS px.
+      let moved = 0;
+      const X = new Float32Array(pts.length), Y = new Float32Array(pts.length);
+      for (let i = 0; i < pts.length; i++) {
+        const q = pts[i];
+        let sx = q.sx, sy = q.sy;
+        // Turn about the hips (source px), by each side's share of its hem's swing.
+        const swing = (h, a) => {
+          const c = Math.cos(a), s2 = Math.sin(a), rx = sx - h.x, ry = sy - h.y;
+          sx = h.x + rx * c - ry * s2; sy = h.y + rx * s2 + ry * c;
+        };
+        if (q.wl && aL) swing(HL, aL * q.wl);
+        if (q.wr && aR) swing(HR, aR * q.wr);
+        let x = sx * k, y = sy * k;
+        if (q.wc) for (const n in q.wc) { const d = chest[n], w = q.wc[n]; if (d && w) { x += d.x * w; y += d.y * w; } }
+        X[i] = x; Y[i] = y;
+        moved = Math.max(moved, Math.abs(x - q.sx * k), Math.abs(y - q.sy * k));
       }
+      if (moved < 0.25) return false;
+
+      const cv = part.canvas, row = M.nx + 1;
+      // Each triangle is clipped a little larger than it is (pushed out from its
+      // middle) so neighbours overlap and no hairline shows between them.
+      const PAD = 0.6;
+      const tri = (a, b, c) => {
+        const pa = pts[a], pb = pts[b], pc = pts[c];
+        const x0 = X[a], y0 = Y[a], x1 = X[b], y1 = Y[b], x2 = X[c], y2 = Y[c];
+        const du1 = pb.u - pa.u, dv1 = pb.v - pa.v, du2 = pc.u - pa.u, dv2 = pc.v - pa.v;
+        const det = du1 * dv2 - du2 * dv1;
+        if (!det) return;
+        const dx1 = x1 - x0, dy1 = y1 - y0, dx2 = x2 - x0, dy2 = y2 - y0;
+        const A = (dx1 * dv2 - dx2 * dv1) / det, C = (dx2 * du1 - dx1 * du2) / det;
+        const B = (dy1 * dv2 - dy2 * dv1) / det, D = (dy2 * du1 - dy1 * du2) / det;
+        const E = x0 - A * pa.u - C * pa.v, F = y0 - B * pa.u - D * pa.v;
+        const mx = (x0 + x1 + x2) / 3, my = (y0 + y1 + y2) / 3;
+        const out = (x, y) => { const l = Math.hypot(x - mx, y - my) || 1; return [x + (x - mx) / l * PAD, y + (y - my) / l * PAD]; };
+        const p0 = out(x0, y0), p1 = out(x1, y1), p2 = out(x2, y2);
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]);
+        ctx.closePath();
+        ctx.clip();
+        ctx.transform(A, B, C, D, E, F);
+        // Only the cell's own patch of the picture (plus a margin) is drawn.
+        const u0 = Math.max(0, Math.min(pa.u, pb.u, pc.u) - 2), v0 = Math.max(0, Math.min(pa.v, pb.v, pc.v) - 2);
+        const u1 = Math.min(cv.width, Math.max(pa.u, pb.u, pc.u) + 2), v1 = Math.min(cv.height, Math.max(pa.v, pb.v, pc.v) + 2);
+        if (u1 > u0 && v1 > v0) ctx.drawImage(cv, u0, v0, u1 - u0, v1 - v0, u0, v0, u1 - u0, v1 - v0);
+        ctx.restore();
+      };
+      // Into the part's frame: canvas px of the picture, with the pivot at 0.
+      ctx.save();
+      ctx.translate(-part.ox * inv, -part.oy * inv);
+      // The mesh points were worked out relative to the pivot in CSS px; shift
+      // them into this frame (picture px * inv).
+      for (let i = 0; i < pts.length; i++) { X[i] += part.ox * inv; Y[i] += part.oy * inv; }
+      for (const c of M.cells) {
+        tri(c, c + 1, c + row + 1);
+        tri(c, c + row + 1, c + row);
+      }
+      ctx.restore();
+      return true;
     }
 
     // Redraw each shoulder line from the neck (on the body) to the arm, wherever
