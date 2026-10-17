@@ -120,6 +120,8 @@
   const airDrag = 0.995;        // gentle air resistance (per frame)
   const restitution = 0.42;     // fraction of speed kept after a floor bounce
   const wallRestitution = 0.5;
+  const ceilingRestitution = 0.6;  // fraction of speed kept bouncing off the top of the screen
+  const EDGE_PUSH = 20;            // px/frame a ragdoll is eased back on screen (never teleported)
   const groundFriction = 0.82;  // horizontal speed kept per frame while sliding
   const REST_SPEED = 2.5;       // below this a landing settles instead of bouncing
   const MIN_IMPACT = 6;         // impact speed that makes noise / squash
@@ -249,6 +251,20 @@
       if (set.toy && !set.toy._failed && set.toy.complete && set.toy.naturalWidth) pet.spriteUntil = now + 300;
     }
     return !(pet.spriteUntil > now);
+  }
+
+  // The box around the skeleton as drawn (joints plus their size), screen px.
+  function bodyExtent(pet) {
+    const j = pet.body.p, r = pet.body.rest;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const n in j) {
+      const rr = (r[n] && r[n].r) || 0;
+      if (j[n].x - rr < x0) x0 = j[n].x - rr;
+      if (j[n].x + rr > x1) x1 = j[n].x + rr;
+      if (j[n].y - rr < y0) y0 = j[n].y - rr;
+      if (j[n].y + rr > y1) y1 = j[n].y + rr;
+    }
+    return { x0, y0, x1, y1 };
   }
 
   // Is point p on the ragdoll's body? Distance to each bone, as wide as the art.
@@ -414,16 +430,20 @@
     activePet = null;
   }
 
+  // The drag starts on the canvas, but follows the pointer (and is let go)
+  // anywhere on the page: over the stats boxes, the buttons, or outside the window.
   const listeners = [
-    ['mousedown', startDrag],
-    ['mousemove', moveDrag],
-    ['mouseup', endDrag],
-    ['touchstart', startDrag],
-    ['touchmove', moveDrag],
-    ['touchend', endDrag],
+    [canvas, 'mousedown', startDrag],
+    [canvas, 'touchstart', startDrag],
+    [window, 'mousemove', moveDrag],
+    [window, 'mouseup', endDrag],
+    [window, 'touchmove', moveDrag],
+    [window, 'touchend', endDrag],
+    [window, 'touchcancel', endDrag],
+    [window, 'blur', endDrag],
   ];
-  listeners.forEach(([ev, fn]) =>
-    canvas.addEventListener(ev, fn, { passive: false })
+  listeners.forEach(([el, ev, fn]) =>
+    el.addEventListener(ev, fn, { passive: false })
   );
 
   // === Resize ===
@@ -464,8 +484,9 @@
         // the grabbed joint (the skeleton does the swinging).
         const p = pet.pointer;
         if (p) {
-          const nx = clamp(p.x - pet.grabX, halfW, canvas.width - halfW);
-          const ny = clamp(p.y - pet.grabY, halfH, groundY - halfH);
+          // Free: the grabbed spot stays exactly under the pointer, wherever it goes.
+          const nx = p.x - pet.grabX;
+          const ny = p.y - pet.grabY;
           pet.vx = (nx - pet.x) / dt;
           pet.vy = (ny - pet.y) / dt;
           pet.x = nx; pet.y = ny;
@@ -489,8 +510,8 @@
           const ny = pet.y + (ty - pet.y) * k;
           pet.vx = (nx - pet.x) / dt;
           pet.vy = (ny - pet.y) / dt;
-          pet.x = clamp(nx, halfW, canvas.width - halfW);
-          pet.y = clamp(ny, halfH, groundY - halfH);
+          pet.x = nx;
+          pet.y = ny;
         }
         // Swing like it's hanging: lean against the motion, plus a bit for
         // being grabbed off-centre, with a springy, damped return.
@@ -521,26 +542,40 @@
       pet.y += pet.vy * dt;
       pet.angle += pet.angVel * dt;
 
-      // --- walls ---
-      if (pet.x < halfW) {
-        pet.x = halfW;
+      // --- walls + ceiling ---
+      // Measured on what you actually see: the skeleton for a ragdoll (a pet
+      // thrown by its foot can hit the top head-first), else the sprite box.
+      let left = pet.x - halfW, right = pet.x + halfW, top = pet.y - halfH;
+      const ragDrawn = rag && pet.body.parts;
+      if (ragDrawn) { const e = bodyExtent(pet); left = e.x0; right = e.x1; top = e.y0; }
+      // A ragdoll released past an edge is eased back; snapping the box would
+      // fling its limbs.
+      const push = ragDrawn ? EDGE_PUSH * dt : Infinity;
+      if (left < 0) {
+        pet.x += Math.min(-left, push);
         if (pet.vx < 0) { pet.vx = -pet.vx * wallRestitution; pet.angVel += 0.03; }
-      } else if (pet.x > canvas.width - halfW) {
-        pet.x = canvas.width - halfW;
+      } else if (right > canvas.width) {
+        pet.x -= Math.min(right - canvas.width, push);
         if (pet.vx > 0) { pet.vx = -pet.vx * wallRestitution; pet.angVel -= 0.03; }
       }
-
-      // --- ceiling ---
-      if (pet.y < halfH) {
-        pet.y = halfH;
-        if (pet.vy < 0) pet.vy = -pet.vy * 0.3;
+      if (top < 0) {
+        pet.y += Math.min(-top, push);
+        if (pet.vy < 0) {
+          const hit = -pet.vy;
+          pet.vy = hit * ceilingRestitution;
+          if (hit > MIN_IMPACT) {
+            playImpactSound(clamp(0.15 + hit / 40, 0.15, 1));
+            pet.angVel += clamp(-pet.vx * 0.004, -0.08, 0.08);   // knocked into a spin
+          }
+        }
       }
 
       // --- floor ---
       pet.onGround = false;
       if (pet.y + halfH >= groundY) {
         const impact = pet.vy;
-        pet.y = groundY - halfH;
+        const sink = pet.y + halfH - groundY;
+        pet.y = sink > EDGE_PUSH * dt && ragDrawn ? pet.y - EDGE_PUSH * dt : groundY - halfH;
         if (impact > REST_SPEED) {
           pet.vy = -impact * restitution;
           if (pet.vy > -REST_SPEED) pet.vy = 0;   // too weak to bounce again
@@ -726,7 +761,7 @@
   window._modeCleanup = function () {
     alive = false;
     cancelAnimationFrame(raf);
-    listeners.forEach(([ev, fn]) => canvas.removeEventListener(ev, fn));
+    listeners.forEach(([el, ev, fn]) => el.removeEventListener(ev, fn));
     window.removeEventListener('resize', onResize);
   };
   window._modeName = 'normal';
