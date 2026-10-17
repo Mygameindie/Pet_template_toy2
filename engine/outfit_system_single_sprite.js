@@ -1238,6 +1238,12 @@
       }
       const full = !only && !behind && !catBehind;
       if (full && extra("under")) drew = true;
+      // Sleeves (<name>_arm_L / _arm_R) go behind the garment's own picture, so the
+      // top lies over the sleeve roots (the ragdoll draws them in the same order).
+      if (full) {
+        if (extra("armL")) drew = true;
+        if (extra("armR")) drew = true;
+      }
       if (behind) {
         const piece = catBehind ? it.img : it.back;
         if (piece && drawCloth(ctx, p, k, id, piece, x, y, w, h, true, catBehind ? null : it.img)) drew = true;
@@ -1246,8 +1252,6 @@
       }
       if (full) {
         if (extra("over")) drew = true;
-        if (extra("armL")) drew = true;
-        if (extra("armR")) drew = true;
       }
     });
     return drew;
