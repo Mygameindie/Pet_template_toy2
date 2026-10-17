@@ -858,7 +858,13 @@
           } else if (part.rest) {
             // The body takes whatever no other part claimed...
             w.x.globalCompositeOperation = 'destination-out';
-            for (const o of regionParts) shape(w.x, o.region);
+            // bodyKeeps: the legs sit that many px lower than drawn, so the body keeps
+            // a strip of clothes under the cut line (pants, tights). It covers the
+            // gap that would open between the waist and the legs' clothes.
+            for (const o of regionParts) {
+              shape(w.x, o.bodyKeeps && o.region.t === 'rect'
+                ? Object.assign({}, o.region, { y0: o.region.y0 + o.bodyKeeps }) : o.region);
+            }
             // ...plus whatever hangs from the hips over the legs...
             if (hang) {
               const h = mkRead(CW, CH);
