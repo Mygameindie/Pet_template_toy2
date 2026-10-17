@@ -203,7 +203,7 @@
       if (!it) return;
       ['img', 'back', 'over', 'under', 'armL', 'armR'].forEach(n => {
         const im = it[n];
-        ready += im ? (im._failed ? 'x' : im.complete ? '1' : '0') : '-';
+        ready += im ? (im._failed ? 'x' : im.complete && (!window.outfitTintReady || window.outfitTintReady(im, col[k])) ? '1' : '0') : '-';
       });
     });
     return JSON.stringify(sel) + JSON.stringify(col) + ready + '|' + window._modeName + '|' + pet_h_sig();

@@ -44,7 +44,7 @@
 // The blue dress: the skirt starts at its waist seam (y 858 of 1134) and ends
 // at the hem. Everything above it (bust, bodice) stays on the body.
 const DRESS1_SKIRT = {
-  left: 0.33, right: 0.67, top: 0.65, bottom: 0.985,
+  left: 0.33, right: 0.77, top: 0.60, bottom: 0.985,
 };
 
 //  RAGDOLL (ported from Computer-pet): each pixel of a garment moves with the
@@ -101,7 +101,11 @@ window.OUTFIT_CONFIG = {
   // boxes never move (backKeep does the same for the back piece).
   windStyle: {
     default: "flow",
-    skirt1: "lift",
+    skirt1: {
+      style: "lift",
+      region: { left: 0.33, right: 0.77, top: 0.67, bottom: 0.810 },
+      tune: { flare: 1.9, lift: 0.90, wave: 0.01, curve: 0.12 },
+    },
     // The gold skirt of dress1. Its back picture has the same skirt in the same
     // place, so the back piece uses the same box and lifts together with it.
     // Blown hard: the hem is thrown up to the waist and flared flat, so what is

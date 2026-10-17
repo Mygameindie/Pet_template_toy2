@@ -363,6 +363,15 @@
     tintCache.set(key, out);
     return out;
   }
+  // Is the picture ready to draw in this colour? A tinted picture is made a
+  // moment after it is first asked for, so anything that builds from the clothes
+  // once (the ragdoll) must wait for it, or it builds with the garment missing.
+  window.outfitTintReady = function (image, colorName) {
+    const hex = COLORS[colorName || DEFAULT_COLOR];
+    if (!hex || !image) return true;
+    const t = tintedImage(image, hex);
+    return t === image || (!!t.complete && t.naturalWidth > 0);
+  };
   function safeDraw(ctx, image, x, y, w, h) {
     if (!image || image._failed || !image.complete || !image.naturalWidth) return false;
     ctx.drawImage(image, x, y, w, h);
