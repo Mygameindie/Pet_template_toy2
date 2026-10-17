@@ -885,6 +885,7 @@
     const cellW = bw / cols, cellH = bh / rowsN;
     const flareMax = Math.max(pr.flare, 0.01);
     const wave = pr.wave || 0, curve = pr.curve || 0;
+    const invert = pr.invert || 0;   // 0 = normal; 1.5-2 = blown inside out (see place())
     // One side lifts first: the side above the blower, plus a slow wobble.
     const tilt = (pr.tilt || 0) * clampN(sim.side * 0.9 + 0.35 * Math.sin(tt * 1.7 + ph), -1.2, 1.2);
 
@@ -906,7 +907,11 @@
       const breathe = 1 + fl + (pr.ripple || 0) * ef * Math.sin(v * 16 - now * 0.013);
       outX = c0 + (sx - c0) * Math.max(0.2, breathe) + sw * nw +
         wave * len * 0.25 * hem * Math.cos(u * 3.1 - tt * 8.3 + ph);
-      outY = startY + len * (v - up) - len * hem * (curve * u * u + wave * wv + tilt * u);
+      // invert: the skirt is blown inside out, like an umbrella turned upside
+      // down. The hem swings up past the waist (rows shrink to a flat disc, then
+      // flip over the body) instead of stopping at it.
+      const rise = invert ? v * (1 - invert * blown) : v - up;
+      outY = startY + len * rise - len * hem * (curve * u * u + wave * wv + tilt * u);
       outSlope = hem * wave * slope;
     }
 
@@ -914,7 +919,7 @@
     const E = cols + 1;
     let topX = new Float32Array(E), topY = new Float32Array(E), topS = new Float32Array(E);
     let botX = new Float32Array(E), botY = new Float32Array(E), botS = new Float32Array(E);
-    const lowY = startY - len * 0.75;
+    const lowY = startY - len * (0.75 + Math.max(0, invert - 1));
     for (let c = 0; c < E; c++) {
       place(x0 + c * cellW, y0);
       topX[c] = outX; topY[c] = Math.max(outY, lowY); topS[c] = outSlope;
@@ -925,7 +930,9 @@
       const sy0 = y0 + r * cellH, sy1 = sy0 + cellH;
       for (let c = 0; c < E; c++) {
         place(x0 + c * cellW, sy1);
-        botX[c] = outX; botY[c] = Math.max(Math.max(outY, lowY), topY[c] + minH); botS[c] = outSlope;
+        botX[c] = outX; botS[c] = outSlope;
+        // Normally the cloth folds up and never turns over; inverted it may.
+        botY[c] = invert ? Math.max(outY, lowY) : Math.max(Math.max(outY, lowY), topY[c] + minH);
       }
       // Only the cells that hold cloth in this row.
       const ri = clampN(Math.floor(sy0 + cellH / 2 - y0), 0, bh - 1);
@@ -937,7 +944,7 @@
           const dx1 = ((topX[c + 1] + botX[c + 1]) / 2 - ox) * s;
           const dy0 = ((topY[c] + topY[c + 1]) / 2 - oy) * s;
           const dy1 = ((botY[c] + botY[c + 1]) / 2 - oy) * s;
-          const lx = Math.min(dx0, dx1), dw = Math.abs(dx1 - dx0) + 1.2, dh = dy1 - dy0 + 1;
+          const lx = Math.min(dx0, dx1), dw = Math.abs(dx1 - dx0) + 1.2, dh = dy1 - dy0 + (dy1 < dy0 ? -1 : 1);
           cx.drawImage(L.moving, c * cellW, r * cellH, cellW, cellH, lx, dy0, dw, dh);
         }
         // Fold light and shade, only where the cloth is waving.
@@ -950,7 +957,7 @@
             const dy1 = ((botY[c] + botY[c + 1]) / 2 - oy) * s;
             // Folds turning away are darker; cloth bunched up (rows pushed
             // together as the hem rises) shows its shadowed inside.
-            const bunch = Math.max(0, 0.85 - (dy1 - dy0) / (cellH * s)) * 1.6;
+            const bunch = Math.min(1, Math.max(0, 0.85 - (dy1 - dy0) / (cellH * s)) * 1.6);
             const sl = (topS[c] + topS[c + 1] + botS[c] + botS[c + 1]) / 4 + bunch * 0.3;
             const lvl = Math.min(8, Math.round(Math.abs(sl) * 20));
             if (lvl < 1) continue;

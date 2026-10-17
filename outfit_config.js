@@ -106,7 +106,7 @@ window.OUTFIT_CONFIG = {
     // place, so the back piece uses the same box and lifts together with it.
     // Blown hard: the hem is thrown up to the waist and flared flat, so what is
     // under the skirt shows. Lower lift / flare for a gentler blow.
-    dress1: { style: "lift", region: DRESS1_SKIRT, backRegion: DRESS1_SKIRT, tune: { lift: 0.85, flare: 1.0 } },
+    dress1: { style: "lift", region: DRESS1_SKIRT, backRegion: DRESS1_SKIRT, tune: { lift: 0.44, flare: 1.0, curve: 0.12, invert: 1.3 } },
   },
 
   // -------------------------------------------------------------------------
