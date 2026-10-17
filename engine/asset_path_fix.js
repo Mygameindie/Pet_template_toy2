@@ -48,6 +48,44 @@
     if (!two && window.PetGender && typeof window.PetGender.get === 'function') two = window.PetGender.get() === 'boy';
     return two ? 'base_2.png' : 'base.png';
   }
+  // ---- A pose = the pet's normal body + that pose's own head ---------------
+  // When base_happy.png is missing but images/parts/head_happy.png exists, the
+  // pose is built from base.png with its head area (the top of the picture)
+  // replaced by head_happy.png. So a new face only needs a head picture, not a
+  // whole redrawn body. Same for head_disgust / head_sick / head_music1 /
+  // head_1 (toy touch) and, for character 2, head_happy_2 and so on.
+  // HEAD_ALIAS maps a pose name to a different head file name: the shower's
+  // scrubbing picture (base_bath2.png) uses head_shower.png.
+  const HEAD_ALIAS = { bath2: 'shower' };
+  const HEAD_CUT = 606 / 1134;          // head area = top 606 rows of the 1134 high art
+  const composed = new Map();
+  function withHead(failed, fb, cb) {
+    const name = POSE.exec(failed)[1];
+    const headUrl = IMAGE_DIR + 'parts/head_' + (HEAD_ALIAS[name] || name) + '.png';
+    const key = fb + '+' + headUrl;
+    if (composed.has(key)) return cb(composed.get(key));
+    const body = new Image(), head = new Image();
+    let left = 2, bad = false;
+    const done = () => {
+      if (--left > 0) return;
+      const finish = url => { composed.set(key, url); cb(url); };
+      if (bad) return finish(null);
+      try {
+        const c = document.createElement('canvas');
+        c.width = body.naturalWidth; c.height = body.naturalHeight;
+        const x = c.getContext('2d');
+        x.drawImage(body, 0, 0);
+        x.clearRect(0, 0, c.width, Math.round(c.height * HEAD_CUT));
+        x.drawImage(head, 0, 0, c.width, c.height);
+        c.toBlob(b => finish(b ? URL.createObjectURL(b) : null));
+      } catch (_) { finish(null); }   // pixels unreadable (file:// page)
+    };
+    body.onload = head.onload = done;
+    body.onerror = head.onerror = () => { bad = true; done(); };
+    desc.set.call(body, IMAGE_DIR + fb);
+    desc.set.call(head, headUrl);
+  }
+
   function armBaseFallback(img, url) {
     if (img.__baseFallbackArmed || typeof url !== 'string' || !POSE.test(url)) return;
     img.__baseFallbackArmed = true;
@@ -59,9 +97,12 @@
         if (img.src !== failed) return;
         const fb = fallbackName(failed);
         if (!fb || failed.split('?')[0].endsWith('/' + fb)) return;
-        img._fallbackBase = true;
-        img.addEventListener('load', () => { img._failed = false; }, { once: true });
-        desc.set.call(img, IMAGE_DIR + fb);
+        withHead(failed, fb, url => {
+          if (img.src !== failed) return;
+          if (!url) img._fallbackBase = true;
+          img.addEventListener('load', () => { img._failed = false; }, { once: true });
+          desc.set.call(img, url || IMAGE_DIR + fb);
+        });
       }, 0);
     });
   }
