@@ -1011,11 +1011,15 @@
         const c = mk(b.x1 - b.x0, b.y1 - b.y0);
         c.getContext('2d').drawImage(r.c, -b.x0, -b.y0);
         const pv = CFG.particles[def.pivot], ch = CFG.particles[def.child];
-        out.push({
+        const sleeve = {
           id: id + '_cloth', pivot: def.pivot, child: def.child, canvas: c,
           ox: pv.x * cs - b.x0, oy: pv.y * cs - b.y0,
           restAngle: Math.atan2(ch.y - pv.y, ch.x - pv.x),
-        });
+        };
+        // A sleeve goes just behind the top (the body's over-the-chest layer), so
+        // the top's own picture lies over the sleeve root; without one, last.
+        const topAt = out.findIndex(o => o.id === 'body_over');
+        if (topAt >= 0) out.splice(topAt, 0, sleeve); else out.push(sleeve);
       }
       // Back pieces of clothes: behind the legs and body, turned with the torso.
       if (back) {
