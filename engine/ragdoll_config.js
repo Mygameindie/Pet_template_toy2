@@ -46,7 +46,7 @@
   const soft = {
     CL: { x: 381, y: 676, r: 15, m: 0.4, k: 0.12, anchor: 'torso', max: 26, maxX: 7, gravity: 0.35 },    // chest
     CR: { x: 469, y: 676, r: 15, m: 0.4, k: 0.12, anchor: 'torso', max: 26, maxX: 7, gravity: 0.35 },
-    Hr: { x: 425, y: 950, r: 20, m: 0.8, k: 0.09, anchor: 'head',  max: 400 },   // end of the back hair
+    Hr: { x: 425, y: 950, r: 20, m: 0.8, k: 0.03, anchor: 'head',  max: 400, gravity: 4 },   // end of the back hair: hangs down when the pet is held
     Tt: { x: 425, y: 1015, r: 8, m: 0.5, k: 0.07, anchor: 'torso', max: 400 },  // tip of the tail
   };
 
@@ -73,7 +73,7 @@
     { pivot: 'HipL', tip: 'FL', lo: -12, hi: 50, frame: 'torso' },
     { pivot: 'HipR', tip: 'FR', lo: -50, hi: 12, frame: 'torso' },
     { pivot: 'N',    tip: 'Hd', lo: -30, hi: 30, heldLo: -30, heldHi: 30, frame: 'torso' },
-    { pivot: 'N',    tip: 'Hr', lo: -35, hi: 35, frame: 'head' },
+    { pivot: 'N',    tip: 'Hr', lo: -85, hi: 85, frame: 'head' },
     { pivot: 'P',    tip: 'Tt', lo: -50, hi: 50, frame: 'torso' },
   ];
 
