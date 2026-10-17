@@ -53,17 +53,21 @@
   // pose is built from base.png with its head area (the top of the picture)
   // replaced by head_happy.png. So a new face only needs a head picture, not a
   // whole redrawn body. Same for head_disgust / head_sick / head_music /
-  // head_1 (toy touch) and, for character 2, head_happy_2 and so on.
+  // head_1 (toy touch). Character 2 adds _2 to the head name: head_2,
+  // head_happy_2, head_1_2, ... (built on base_2.png).
   // HEAD_FILE maps a pose name to a different head file: the shower's
   // scrubbing picture (base_bath2.png) uses head_shower.png, the first dance
   // frame (base_music1.png) keeps the normal head.png and the second
-  // (base_music2.png) uses head_music.png.
-  const HEAD_FILE = { bath2: 'head_shower', music1: 'head', music2: 'head_music' };
+  // (base_music2.png) uses head_music.png, and doctor mode's healed picture
+  // (base_healed.png) uses head_heal.png.
+  const HEAD_FILE = { bath2: 'head_shower', music1: 'head', music2: 'head_music', healed: 'head_heal' };
   const HEAD_CUT = 606 / 1134;          // head area = top 606 rows of the 1134 high art
   const composed = new Map();
   function withHead(failed, fb, cb) {
-    const name = POSE.exec(failed)[1];
-    const headUrl = IMAGE_DIR + 'parts/' + (HEAD_FILE[name] || 'head_' + name) + '.png';
+    // 'happy_2' / '2_bath2' -> pose 'happy' / 'bath2' on character 2's body.
+    const core = POSE.exec(failed)[1].split('_').filter(t => t !== '2').join('_');
+    const two = fb === 'base_2.png';
+    const headUrl = IMAGE_DIR + 'parts/' + (HEAD_FILE[core] || 'head_' + core) + (two ? '_2' : '') + '.png';
     const key = fb + '+' + headUrl;
     if (composed.has(key)) return cb(composed.get(key));
     const body = new Image(), head = new Image();

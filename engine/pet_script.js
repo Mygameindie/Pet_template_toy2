@@ -159,9 +159,9 @@
     }
     const suffix = partSuffix(i);
     const imgs = {};
-    // Optional touched-by-a-toy head (head_1.png, head_2_1.png for character 2),
+    // Optional touched-by-a-toy head (head_1.png, head_1_2.png for character 2),
     // the head twin of base_1.png: same ragdoll body, only the face changes.
-    const toyHead = { file: 'head', key: 'toyHead', name: 'head' + suffix + '_1' };
+    const toyHead = { file: 'head', key: 'toyHead', name: 'head_1' + suffix };
     let pending = RCFG.parts.length + 1;
     pet.partsSuffix = suffix;
     RCFG.parts.concat([toyHead]).forEach(part => {

@@ -60,11 +60,13 @@
   // =========================
   // Images (per pet)
   // =========================
-  // Dance frames per pet: base_music1.png / base_music2.png plus the pet's
-  // artSuffix (e.g. base_music1_2.png). If missing, falls back to pet1 frames.
+  // Dance frames per pet: the normal base.png (also shown before and after the
+  // music) and base_music2.png (head_music.png on the normal body), plus the
+  // pet's artSuffix (e.g. base_2.png / base_music2_2.png). If missing, falls
+  // back to pet1 frames.
   const petImgs = PET_CFG.map(c => {
     const p = { a: new Image(), b: new Image(), current: null, toggle: false };
-    p.a.src = `base_music1${c.artSuffix || ""}.png`;
+    p.a.src = `base${c.artSuffix || ""}.png`;
     p.b.src = `base_music2${c.artSuffix || ""}.png`;
     p.current = p.a;
     return p;
