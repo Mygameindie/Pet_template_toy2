@@ -44,7 +44,7 @@
 // The blue dress: the skirt starts at its waist seam (y 858 of 1134) and ends
 // at the hem. Everything above it (bust, bodice) stays on the body.
 const DRESS1_SKIRT = {
-  left: 0.33, right: 0.67, top: 0.755, bottom: 0.985,
+  left: 0.33, right: 0.67, top: 0.65, bottom: 0.985,
 };
 
 //  RAGDOLL (ported from Computer-pet): each pixel of a garment moves with the
@@ -106,7 +106,7 @@ window.OUTFIT_CONFIG = {
     // place, so the back piece uses the same box and lifts together with it.
     // Blown hard: the hem is thrown up to the waist and flared flat, so what is
     // under the skirt shows. Lower lift / flare for a gentler blow.
-    dress1: { style: "lift", region: DRESS1_SKIRT, backRegion: DRESS1_SKIRT, tune: { lift: 0.44, flare: 1.0, curve: 0.12, invert: 1.3 } },
+    dress1: { style: "lift", region: DRESS1_SKIRT, backRegion: DRESS1_SKIRT, tune: { lift: 0.44, flare: 11.0, curve: 0.12, invert: 0.7 } },
   },
 
   // -------------------------------------------------------------------------
@@ -173,12 +173,9 @@ window.OUTFIT_CONFIG = {
 
   defaults: {
     pet1: {
-      top: "top1",
-      topUnderwear: "topunderwear1",
+      hat: "hat1",
       bottomUnderwear: "bottomunderwear1",
-      bottom: "skirt1",
-      socks: "socks1",
-      shoes: "shoes1",
+      dress: "dress1",
     },
     pet2: {
       bottomUnderwear: "boxers1_2",
