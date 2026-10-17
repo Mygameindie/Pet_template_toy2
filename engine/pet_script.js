@@ -271,9 +271,11 @@
       // A garment's own _over picture (a dress's bust pieces) goes ABOVE that
       // garment; the over pictures of other things (a bra's straps) stay
       // under the stiff top / dress worn over them.
-      const ownsTop = it => it.stiff || it.whole || coversChest(it);
+      // A whole garment (a bra) is drawn first on the body's over layer, so a dress
+      // or stiff top worn over it still covers it.
+      const ownsTop = it => !it.whole && (it.stiff || coversChest(it));
+      D(over.getContext('2d'), 'stand', 0, 0, W, H, i, it => it.whole);
       D(over.getContext('2d'), 'stand', 0, 0, W, H, i, it => !ownsTop(it), 'over');
-      D(overTop.getContext('2d'), 'stand', 0, 0, W, H, i, it => it.whole);
       D(overTop.getContext('2d'), 'stand', 0, 0, W, H, i, ownsTop, 'over');
       const sx = stiff.getContext('2d');
       D(sx, 'stand', 0, 0, W, H, i, it => !it.whole && (it.stiff || (covers(it) && !it.hangs && !it.blows)));
