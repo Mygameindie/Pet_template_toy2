@@ -59,7 +59,36 @@ if (!window.SoundManager) {
     if (btn) btn.classList.add('active');
   }
 
+  // A mode script runs when it finishes downloading, not when it is added.
+  // Switching again before that left the half-loaded mode running for good
+  // (nothing could clean it up), so two modes drew at once and the pets
+  // flickered or vanished. Now a switch asked for while a mode is still
+  // loading waits for it, then cleans it up and switches.
+  let loading = false;
+  let queued = null;
+  let loadGuard = 0;
+
+  function finishLoading() {
+    if (!loading) return;
+    loading = false;
+    clearTimeout(loadGuard);
+    if (queued) {
+      const next = queued;
+      queued = null;
+      loadMode(next[0], next[1], next[2]);
+    }
+  }
+
   function loadMode(src, label, btnId) {
+
+    if (loading) {
+      queued = [src, label, btnId];
+      setActiveButton(btnId);
+      return;
+    }
+    loading = true;
+    // Never wait forever on a script that neither loads nor errors.
+    loadGuard = setTimeout(finishLoading, 8000);
 
     if (window.SoundManager) window.SoundManager.stopAll();
     unloadActiveMode();
@@ -80,6 +109,7 @@ if (!window.SoundManager) {
 
         if (loadedCount === scripts.length) {
           if (hint) hint.textContent = label + ' Loaded';
+          finishLoading();
           // IMPORTANT: do NOT overwrite window._modeName here.
           // Each mode script sets window._modeName (e.g. "shower") and
           // other systems (clothes/drag rules) depend on that exact value.
@@ -89,6 +119,7 @@ if (!window.SoundManager) {
       s.onerror = () => {
         console.error('Failed to load', path);
         if (hint) hint.textContent = 'Error loading ' + label;
+        finishLoading();
       };
 
       document.body.appendChild(s);

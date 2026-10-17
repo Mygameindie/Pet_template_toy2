@@ -127,11 +127,16 @@
   let crops = [];
   const cropImgs = {};
 
+  // False once this mode is unloaded, so a late garden_items.json can't put
+  // the toolbar back on top of the next mode.
+  let alive = true;
+
   async function loadCrops() {
     const res = await fetch('garden_items.json', { cache: 'no-store' });
     if (!res.ok) throw new Error('garden_items.json not found');
 
     const cfg = await res.json();
+    if (!alive) return;   // left Garden mode before the list arrived: build nothing
     crops = cfg.crops || [];
 
     crops.forEach(c => {
@@ -673,13 +678,14 @@
 
   loadCrops().catch(err => {
     console.error(err);
-    buildToolbar();
+    if (alive) buildToolbar();
   });
 
   loop();
 
   // ===== CLEANUP =====
   window._modeCleanup = function () {
+    alive = false;
     cancelAnimationFrame(raf);
     clearInterval(saveInterval);
 
