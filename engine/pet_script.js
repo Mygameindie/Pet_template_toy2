@@ -159,21 +159,25 @@
     }
     const suffix = partSuffix(i);
     const imgs = {};
-    let pending = RCFG.parts.length;
+    // Optional touched-by-a-toy head (head_1.png, head_2_1.png for character 2),
+    // the head twin of base_1.png: same ragdoll body, only the face changes.
+    const toyHead = { file: 'head', key: 'toyHead', name: 'head' + suffix + '_1' };
+    let pending = RCFG.parts.length + 1;
     pet.partsSuffix = suffix;
-    RCFG.parts.forEach(part => {
+    RCFG.parts.concat([toyHead]).forEach(part => {
       const im = new Image();
       const done = ok => {
-        if (ok) imgs[part.file] = im;
+        if (ok) imgs[part.key || part.file] = im;
         if (--pending > 0 || !alive || pet.partsSuffix !== suffix) return;
         pet.partImgs = imgs;
+        pet.toyHead = imgs.toyHead || null;
         pet.hasParts = RCFG.parts.every(q => q.optional || imgs[q.file]);
         pet.artSig = null;
         pet.placed = false;
       };
       im.onload = () => done(true);
       im.onerror = () => done(false);
-      im.src = 'images/parts/' + part.file + suffix + '.png';
+      im.src = 'images/parts/' + (part.name || part.file + suffix) + '.png';
     });
   }
 
@@ -232,7 +236,8 @@
   // Cut the clothes up along the body parts and hand them to the skeleton.
   // Only redone when the outfit or the art changes.
   function buildBody(pet, i) {
-    const sig = wornSig(i);
+    const useToyHead = !!(pet._toyActive && pet.toyHead);
+    const sig = wornSig(i) + '|toyHead' + (useToyHead ? 1 : 0);
     if (sig === pet.artSig) return;
     pet.artSig = sig;
     const cs = (pet.h / RCFG.SRC_H) * hdDpr();
@@ -277,7 +282,8 @@
     }
     pet.body.layout(pet.h / RCFG.SRC_H);
     try {
-      pet.body.buildArt(pet.partImgs, cloth, cs, hang, over, under, blow,
+      const partImgs = useToyHead ? Object.assign({}, pet.partImgs, { head: pet.toyHead }) : pet.partImgs;
+      pet.body.buildArt(partImgs, cloth, cs, hang, over, under, blow,
         isFinite(blowFrom) ? blowFrom : null, stiff, { arm_L: armL, arm_R: armR }, back);
     } catch (err) {
       // Reading the pictures' pixels is refused when the game is opened as a
@@ -295,7 +301,7 @@
     if (!RAGDOLL_ON || !pet.body || !pet.hasParts) return false;
     const now = performance.now();
     if (window.ClothWind && window.ClothWind.get(i) > 0) pet.spriteUntil = now + 1500;
-    if (pet._toyActive) {
+    if (pet._toyActive && !pet.toyHead) {
       const set = baseSets[i] || baseSets[0];
       if (set.toy && !set.toy._failed && !set.toy._fallbackBase && set.toy.complete && set.toy.naturalWidth) pet.spriteUntil = now + 300;
     }
