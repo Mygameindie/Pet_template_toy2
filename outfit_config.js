@@ -41,10 +41,10 @@
 // ===========================================================
 
 // The moving skirt piece of dress1, as fractions (0..1) of the picture.
+// The blue dress: the skirt starts at its waist seam (y 858 of 1134) and ends
+// at the hem. Everything above it (bust, bodice) stays on the body.
 const DRESS1_SKIRT = {
-  left: 0.41, right: 0.59, top: 0.605, bottom: 0.80,
-  // the lower underskirt outline: it fades away while the skirt is blown up
-  hide: { left: 0.37, right: 0.63, top: 0.83, bottom: 0.91 },
+  left: 0.33, right: 0.67, top: 0.755, bottom: 0.985,
 };
 
 //  RAGDOLL (ported from Computer-pet): each pixel of a garment moves with the
