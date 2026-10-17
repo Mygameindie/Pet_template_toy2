@@ -297,7 +297,7 @@
     if (window.ClothWind && window.ClothWind.get(i) > 0) pet.spriteUntil = now + 1500;
     if (pet._toyActive) {
       const set = baseSets[i] || baseSets[0];
-      if (set.toy && !set.toy._failed && set.toy.complete && set.toy.naturalWidth) pet.spriteUntil = now + 300;
+      if (set.toy && !set.toy._failed && !set.toy._fallbackBase && set.toy.complete && set.toy.naturalWidth) pet.spriteUntil = now + 300;
     }
     return !(pet.spriteUntil > now);
   }

@@ -41,10 +41,11 @@
   const SKIRT_FULL = 1400;         // px/s at which it is blown right up
   const SKIRT_WIDEN = 0.7;         // how much wider it billows, fully blown
   const SKIRT_FOLD = 0.7;          // how much shorter (lifted up toward the hips) it gets, fully blown
-  const LEG_FOLLOW = 0.85;          // how much of a leg's swing a skirt's hem takes (0..1)
-  const MESH = 12;                 // px (device) between the points of a bending layer's mesh
-  const HEM_K = 0.07;              // how hard a skirt's hem is pulled toward where it hangs (per step)
-  const HEM_DAMP = 0.86;           // share of the hem's swing kept per step
+  const LEG_FOLLOW = 1;             // how much of a leg's swing a skirt's hem takes (0..1)
+  const MESH_CELLS = 7;            // cells across the longer side of a bending layer's mesh (the bend is smooth,
+                                   // so a coarse mesh looks the same and draws far fewer triangles)
+  const HEM_K = 0.14;              // how hard a skirt's hem is pulled toward where it hangs (per step)
+  const HEM_DAMP = 0.78;           // share of the hem's swing kept per step
   const HEM_INERTIA = 0.0035;      // how much the hem lags when the hips are pushed sideways
   const HEM_DRAPE = 0.45;          // how far the hem swings toward the floor when the body tilts
   const HEM_MAX = 1.2;             // radians the hem may swing either way
@@ -724,7 +725,7 @@
       const meshOf = (c, ox, oy, pivot, weigh) => {
         const W = c.width, H = c.height;
         const d = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
-        const G = Math.max(6, Math.round(MESH * Math.max(1, cs / 1.2)));
+        const G = Math.max(8, Math.ceil(Math.max(W, H) / MESH_CELLS));
         const nx = Math.ceil(W / G), ny = Math.ceil(H / G);
         const pv = CFG.particles[pivot];
         const pts = [];
@@ -1125,43 +1126,32 @@
       if (moved < 0.25) return false;
 
       const cv = part.canvas, row = M.nx + 1;
-      // Each triangle is clipped a little larger than it is (pushed out from its
-      // middle) so neighbours overlap and no hairline shows between them.
-      const PAD = 0.6;
-      const tri = (a, b, c) => {
-        const pa = pts[a], pb = pts[b], pc = pts[c];
-        const x0 = X[a], y0 = Y[a], x1 = X[b], y1 = Y[b], x2 = X[c], y2 = Y[c];
-        const du1 = pb.u - pa.u, dv1 = pb.v - pa.v, du2 = pc.u - pa.u, dv2 = pc.v - pa.v;
-        const det = du1 * dv2 - du2 * dv1;
-        if (!det) return;
-        const dx1 = x1 - x0, dy1 = y1 - y0, dx2 = x2 - x0, dy2 = y2 - y0;
-        const A = (dx1 * dv2 - dx2 * dv1) / det, C = (dx2 * du1 - dx1 * du2) / det;
-        const B = (dy1 * dv2 - dy2 * dv1) / det, D = (dy2 * du1 - dy1 * du2) / det;
-        const E = x0 - A * pa.u - C * pa.v, F = y0 - B * pa.u - D * pa.v;
-        const mx = (x0 + x1 + x2) / 3, my = (y0 + y1 + y2) / 3;
-        const out = (x, y) => { const l = Math.hypot(x - mx, y - my) || 1; return [x + (x - mx) / l * PAD, y + (y - my) / l * PAD]; };
-        const p0 = out(x0, y0), p1 = out(x1, y1), p2 = out(x2, y2);
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]);
-        ctx.closePath();
-        ctx.clip();
-        ctx.transform(A, B, C, D, E, F);
-        // Only the cell's own patch of the picture (plus a margin) is drawn.
-        const u0 = Math.max(0, Math.min(pa.u, pb.u, pc.u) - 2), v0 = Math.max(0, Math.min(pa.v, pb.v, pc.v) - 2);
-        const u1 = Math.min(cv.width, Math.max(pa.u, pb.u, pc.u) + 2), v1 = Math.min(cv.height, Math.max(pa.v, pb.v, pc.v) + 2);
-        if (u1 > u0 && v1 > v0) ctx.drawImage(cv, u0, v0, u1 - u0, v1 - v0, u0, v0, u1 - u0, v1 - v0);
-        ctx.restore();
-      };
+      // Each cell is drawn as one patch of the picture stretched onto the
+      // parallelogram that best fits where its four corners went (no clipping,
+      // which is what makes this cheap). A couple of px of overlap hides the
+      // tiny mismatch between neighbouring patches.
+      const OV = 2;
       // Into the part's frame: canvas px of the picture, with the pivot at 0.
       ctx.save();
       ctx.translate(-part.ox * inv, -part.oy * inv);
-      // The mesh points were worked out relative to the pivot in CSS px; shift
-      // them into this frame (picture px * inv).
       for (let i = 0; i < pts.length; i++) { X[i] += part.ox * inv; Y[i] += part.oy * inv; }
       for (const c of M.cells) {
-        tri(c, c + 1, c + row + 1);
-        tri(c, c + row + 1, c + row);
+        const a0 = c, a1 = c + 1, a2 = c + row, a3 = c + row + 1;   // TL, TR, BL, BR
+        const p0 = pts[a0], p3 = pts[a3];
+        const cw = p3.u - p0.u, ch = p3.v - p0.v;
+        if (cw <= 0 || ch <= 0) continue;
+        // Axes: the average of the two horizontal edges and the two vertical ones.
+        const ax = ((X[a1] - X[a0]) + (X[a3] - X[a2])) / 2 / cw, ay = ((Y[a1] - Y[a0]) + (Y[a3] - Y[a2])) / 2 / cw;
+        const bx = ((X[a2] - X[a0]) + (X[a3] - X[a1])) / 2 / ch, by = ((Y[a2] - Y[a0]) + (Y[a3] - Y[a1])) / 2 / ch;
+        const mx = (X[a0] + X[a1] + X[a2] + X[a3]) / 4, my = (Y[a0] + Y[a1] + Y[a2] + Y[a3]) / 4;
+        const cu = p0.u + cw / 2, cvv = p0.v + ch / 2;
+        const u0 = Math.max(0, p0.u - OV), v0 = Math.max(0, p0.v - OV);
+        const u1 = Math.min(cv.width, p3.u + OV), v1 = Math.min(cv.height, p3.v + OV);
+        ctx.save();
+        // Maps picture px (u, v) to (mx, my) + (u - cu) * a + (v - cv) * b.
+        ctx.transform(ax, ay, bx, by, mx - ax * cu - bx * cvv, my - ay * cu - by * cvv);
+        ctx.drawImage(cv, u0, v0, u1 - u0, v1 - v0, u0, v0, u1 - u0, v1 - v0);
+        ctx.restore();
       }
       ctx.restore();
       return true;
