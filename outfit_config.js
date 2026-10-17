@@ -104,7 +104,9 @@ window.OUTFIT_CONFIG = {
     skirt1: "lift",
     // The gold skirt of dress1. Its back picture has the same skirt in the same
     // place, so the back piece uses the same box and lifts together with it.
-    dress1: { style: "lift", region: DRESS1_SKIRT, backRegion: DRESS1_SKIRT },
+    // Blown hard: the hem is thrown up to the waist and flared flat, so what is
+    // under the skirt shows. Lower lift / flare for a gentler blow.
+    dress1: { style: "lift", region: DRESS1_SKIRT, backRegion: DRESS1_SKIRT, tune: { lift: 0.85, flare: 1.0 } },
   },
 
   // -------------------------------------------------------------------------
