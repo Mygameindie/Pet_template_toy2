@@ -106,5 +106,22 @@
     });
   }
 
+  // Keep fixed UI (stats panel) clear of any top inset / toolbar overlap and
+  // undo stray page scroll that can push the page edge out of view.
+  function syncTopInset() {
+    const vv = window.visualViewport;
+    if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+    const off = vv && vv.scale <= 1.01 ? Math.max(0, vv.offsetTop) : 0;
+    if (off > 0) document.documentElement.style.setProperty("--safe-top", off + "px");
+    else document.documentElement.style.removeProperty("--safe-top");
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("scroll", syncTopInset);
+    window.visualViewport.addEventListener("resize", syncTopInset);
+  }
+  window.addEventListener("scroll", syncTopInset);
+  window.addEventListener("pageshow", syncTopInset);
+  syncTopInset();
+
   resizeCanvas();
 })();

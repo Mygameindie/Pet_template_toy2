@@ -141,7 +141,7 @@ canvas {
 /* === Stats panel === */
 #pet-stats-panel {
   position: fixed;
-  top: 10px;
+  top: calc(10px + var(--safe-top, env(safe-area-inset-top, 0px)));
   left: 10px;
   z-index: 800;
   display: flex;
@@ -365,7 +365,7 @@ button[style*="Change Clothes"] {
   }
 
   #pet-stats-panel {
-    top: 6px;
+    top: calc(6px + var(--safe-top, env(safe-area-inset-top, 0px)));
     left: 6px;
     gap: 4px;
     max-height: 35vh;
@@ -433,7 +433,7 @@ button[style*="Change Clothes"] {
   }
 
   #pet-stats-panel {
-    top: 4px;
+    top: calc(4px + var(--safe-top, env(safe-area-inset-top, 0px)));
     left: 4px;
     gap: 4px;
     flex-direction: row;
