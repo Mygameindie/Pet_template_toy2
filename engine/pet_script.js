@@ -258,22 +258,25 @@
     let blowFrom = Infinity;
     const D = window.drawOutfitOverlay;
     if (typeof D === 'function') {
-      const covers = it => !it.stiff && coversChest(it);
-      D(cloth.getContext('2d'), 'stand', 0, 0, W, H, i, it => !it.stiff && !it.blows && !(covers(it) && !it.hangs));
-      D(hang.getContext('2d'), 'stand', 0, 0, W, H, i, it => (it.hangs || it.blows) && !it.stiff);
+      // whole: true (outfit_config.js): carried by the body in one piece, drawn
+      // over the chest (a bra: its cups and straps never go off with an arm).
+      const covers = it => !it.stiff && !it.whole && coversChest(it);
+      D(cloth.getContext('2d'), 'stand', 0, 0, W, H, i, it => !it.stiff && !it.whole && !it.blows && !(covers(it) && !it.hangs));
+      D(hang.getContext('2d'), 'stand', 0, 0, W, H, i, it => (it.hangs || it.blows) && !it.stiff && !it.whole);
       D(blow.getContext('2d'), 'stand', 0, 0, W, H, i, it => {
-        if (!it.blows || it.stiff) return false;
+        if (!it.blows || it.stiff || it.whole) return false;
         if (typeof it.blows === 'number') blowFrom = Math.min(blowFrom, it.blows);
         return true;
       });
       // A garment's own _over picture (a dress's bust pieces) goes ABOVE that
       // garment; the over pictures of other things (a bra's straps) stay
       // under the stiff top / dress worn over them.
-      const ownsTop = it => it.stiff || coversChest(it);
+      const ownsTop = it => it.stiff || it.whole || coversChest(it);
       D(over.getContext('2d'), 'stand', 0, 0, W, H, i, it => !ownsTop(it), 'over');
+      D(overTop.getContext('2d'), 'stand', 0, 0, W, H, i, it => it.whole);
       D(overTop.getContext('2d'), 'stand', 0, 0, W, H, i, ownsTop, 'over');
       const sx = stiff.getContext('2d');
-      D(sx, 'stand', 0, 0, W, H, i, it => it.stiff || (covers(it) && !it.hangs && !it.blows));
+      D(sx, 'stand', 0, 0, W, H, i, it => !it.whole && (it.stiff || (covers(it) && !it.hangs && !it.blows)));
       // A dress (or other hanging garment) that covers the chest: its top half
       // goes over the chest like a top, its skirt still hangs / blows.
       const tops = sized(), tx = tops.getContext('2d');

@@ -44,6 +44,11 @@ Tips:
   `outfit_config.js` (`{ id: "top1", stiff: true }`) and it stays whole on the body,
   over the chest. The chest doesn't bounce under it. Its sleeves (anything in the blue arm
   areas) still move with the arms, so draw a top and its sleeves together in one file.
+- **Whole garments (bras).** Anything outside the pink circles that lies in an arm or head area
+  (a strap over the shoulder, a wide cup) moves with that arm or head, so a bra could come apart
+  and stick to an arm. Mark it `whole: true` (`{ id: "topunderwear1", whole: true }`) and the
+  whole picture, cups and straps, is carried by the body over the chest and bounces with it.
+  The four bras are set up that way already.
 - The chest wins over the arms: anything inside the pink circles only ever moves with the chest.
 - Give garments an outline (black, like the body art). Colour tinting in the Dress Up panel
   works best on light/white garments.

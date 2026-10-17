@@ -110,6 +110,7 @@
       // Ragdoll flags (see outfit_config.js): hangs / stiff / blows.
       hangs: entry.hangs,
       stiff: entry.stiff,
+      whole: entry.whole,
       blows: entry.blows,
     };
   }
@@ -178,6 +179,7 @@
             // dress), stays whole over the chest (stiff), or blows up while falling.
             hangs: it.hangs === undefined ? c.hangs : !!it.hangs,
             stiff: !!it.stiff,
+            whole: !!it.whole,
             blows: it.blows === undefined ? c.blows : it.blows,
           };
         });

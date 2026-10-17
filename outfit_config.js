@@ -133,7 +133,8 @@ window.OUTFIT_CONFIG = {
   ],
 
   pet1: {
-    topUnderwear:      ["topunderwear1", "topunderwear2", "topunderwear3", "topunderwear4"],
+    // whole: true keeps a bra in one piece on the body (cups and straps never go off with an arm).
+    topUnderwear:      [{ id: "topunderwear1", whole: true }, { id: "topunderwear2", whole: true }, { id: "topunderwear3", whole: true }, { id: "topunderwear4", whole: true }],
     bottomUnderwear:   [{ id: "bottomunderwear1", hangs: true }, "bottomunderwear2", "bottomunderwear3", "bottomunderwear4"],
     onepieceUnderwear: ["onepieceunderwear1"],
     top:               [{ id: "top1", stiff: true }],
