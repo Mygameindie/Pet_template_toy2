@@ -293,6 +293,45 @@
     save() { doSave(); },
   };
 
+  // ===========================================================
+  // 🙂 FACES — which head the pet wears (head_<name>.png in images/parts/;
+  // head_<name>_2.png for character 2). What you do to the pet sets a face
+  // for a few seconds, so it is still there when you come back to normal
+  // mode: fed something it likes -> happy, disliked / trolled -> disgust,
+  // medicine -> heal, karaoke -> music, shower -> shower. A pet with any stat
+  // under 20 is sick. window.PetFace.set(i, name, ms) sets one by hand.
+  // ===========================================================
+  const faceNow = [];
+  window.PetFace = {
+    set(i, name, ms) { faceNow[i || 0] = name ? { name, until: performance.now() + (ms || 4000) } : null; },
+    get(i) {
+      const f = faceNow[i || 0];
+      if (f && f.until > performance.now()) return f.name;
+      const s = petStats[i || 0];
+      if (s && Math.min(s.hunger, s.happiness, s.cleanliness, s.energy) < 20) return 'sick';
+      return null;
+    },
+  };
+  (function hookFaces() {
+    const P = window.PetStats;
+    const on = (method, pick, ms) => {
+      const orig = P[method];
+      P[method] = function (petIdx) {
+        const r = orig.apply(this, arguments);
+        const name = pick.apply(null, arguments);
+        if (name) window.PetFace.set(typeof petIdx === 'number' ? petIdx : 0, name, ms);
+        return r;
+      };
+    };
+    on('feed', (i, liked) => liked ? 'happy' : 'disgust', 4000);
+    on('feedSpecial', (i, type) => type === 'spicy' ? 'disgust' : 'happy', 4000);
+    on('shower', () => 'shower', 2500);
+    on('troll', () => 'disgust', 3000);
+    on('karaoke', () => 'music', 5000);
+    on('heal', () => 'heal', 5000);
+    on('playground', () => 'happy', 3000);
+  })();
+
   buildStatsUI();
   updateUI();
   applyMute();

@@ -151,6 +151,15 @@
   }
   function partSuffix(i) { return (PET_CFG[i] && PET_CFG[i].artSuffix) || ''; }
 
+  // Heads besides the normal one: 1 = touched by a toy (head_1.png), the rest
+  // are set by PetFace (pet_stats.js) from what you do to the pet.
+  const FACES = ['1', 'happy', 'disgust', 'sick', 'heal', 'music', 'shower'];
+  // The face the pet wears right now, or null for its normal head.
+  function faceOf(pet, i) {
+    const name = pet._toyActive ? '1' : (window.PetFace ? window.PetFace.get(i) : null);
+    return name && pet.faceImgs && pet.faceImgs[name] ? name : null;
+  }
+
   function loadParts(pet, i) {
     if (!RAGDOLL_ON) return;
     if (!pet.body) {
@@ -159,18 +168,19 @@
     }
     const suffix = partSuffix(i);
     const imgs = {};
-    // Optional touched-by-a-toy head (head_1.png, head_1_2.png for character 2),
-    // the head twin of base_1.png: same ragdoll body, only the face changes.
-    const toyHead = { file: 'head', key: 'toyHead', name: 'head_1' + suffix };
-    let pending = RCFG.parts.length + 1;
+    // Optional faces: head_<name>.png (head_<name>_2.png for character 2) for
+    // each name in FACES. Same ragdoll body, only the head picture changes.
+    const faces = FACES.map(n => ({ file: 'head', key: 'face_' + n, name: 'head_' + n + suffix }));
+    let pending = RCFG.parts.length + faces.length;
     pet.partsSuffix = suffix;
-    RCFG.parts.concat([toyHead]).forEach(part => {
+    RCFG.parts.concat(faces).forEach(part => {
       const im = new Image();
       const done = ok => {
         if (ok) imgs[part.key || part.file] = im;
         if (--pending > 0 || !alive || pet.partsSuffix !== suffix) return;
         pet.partImgs = imgs;
-        pet.toyHead = imgs.toyHead || null;
+        pet.faceImgs = {};
+        FACES.forEach(n => { if (imgs['face_' + n]) pet.faceImgs[n] = imgs['face_' + n]; });
         pet.hasParts = RCFG.parts.every(q => q.optional || imgs[q.file]);
         pet.artSig = null;
         pet.placed = false;
@@ -236,8 +246,8 @@
   // Cut the clothes up along the body parts and hand them to the skeleton.
   // Only redone when the outfit or the art changes.
   function buildBody(pet, i) {
-    const useToyHead = !!(pet._toyActive && pet.toyHead);
-    const sig = wornSig(i) + '|toyHead' + (useToyHead ? 1 : 0);
+    const face = faceOf(pet, i);
+    const sig = wornSig(i) + '|face' + (face || '');
     if (sig === pet.artSig) return;
     pet.artSig = sig;
     const cs = (pet.h / RCFG.SRC_H) * hdDpr();
@@ -287,7 +297,7 @@
     }
     pet.body.layout(pet.h / RCFG.SRC_H);
     try {
-      const partImgs = useToyHead ? Object.assign({}, pet.partImgs, { head: pet.toyHead }) : pet.partImgs;
+      const partImgs = face ? Object.assign({}, pet.partImgs, { head: pet.faceImgs[face] }) : pet.partImgs;
       pet.body.buildArt(partImgs, cloth, cs, hang, over, under, blow,
         isFinite(blowFrom) ? blowFrom : null, stiff, { arm_L: armL, arm_R: armR }, back, overTop);
     } catch (err) {
@@ -306,7 +316,7 @@
     if (!RAGDOLL_ON || !pet.body || !pet.hasParts) return false;
     const now = performance.now();
     if (window.ClothWind && window.ClothWind.get(i) > 0) pet.spriteUntil = now + 1500;
-    if (pet._toyActive && !pet.toyHead) {
+    if (pet._toyActive && !(pet.faceImgs && pet.faceImgs['1'])) {
       const set = baseSets[i] || baseSets[0];
       if (set.toy && !set.toy._failed && !set.toy._fallbackBase && set.toy.complete && set.toy.naturalWidth) pet.spriteUntil = now + 300;
     }
