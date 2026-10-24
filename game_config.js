@@ -12,9 +12,14 @@
 //   xFrac     : horizontal start position, 0..1 of screen width.
 //   drawFilter: CSS filter used when this pet falls back to
 //               pet 1's art ("none" for no tint).
+//
+// posesFromHeads: true = there are no whole-body pictures (base.png,
+//   base_sick.png, base_happy.png ...). Every pose is the body built from
+//   images/parts/ plus that pose's head (head_sick.png, head_happy.png ...).
 // ===========================================================
 window.GAME_CONFIG = {
   saveKey: "purelilypet_save",
+  posesFromHeads: false,
   pets: [
     { artSuffix: "",   xFrac: 0.35, drawFilter: "none" },
     { artSuffix: "_2", xFrac: 0.65, drawFilter: "hue-rotate(140deg) saturate(1.2)" },

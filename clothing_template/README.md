@@ -44,6 +44,11 @@ Tips:
   `outfit_config.js` (`{ id: "top1", stiff: true }`) and it stays whole on the body,
   over the chest. The chest doesn't bounce under it. Its sleeves (anything in the blue arm
   areas) still move with the arms, so draw a top and its sleeves together in one file.
+- **Whole garments (bras).** Anything outside the pink circles that lies in an arm or head area
+  (a strap over the shoulder, a wide cup) moves with that arm or head, so a bra could come apart
+  and stick to an arm. Mark it `whole: true` (`{ id: "topunderwear1", whole: true }`) and the
+  whole picture, cups and straps, is carried by the body over the chest and bounces with it.
+  The four bras are set up that way already.
 - The chest wins over the arms: anything inside the pink circles only ever moves with the chest.
 - Give garments an outline (black, like the body art). Colour tinting in the Dress Up panel
   works best on light/white garments.
@@ -69,6 +74,12 @@ so each one shows up in Dress Up as soon as the file exists:
 | Glasses | `glasses1.png` |
 | Ears | `ears1.png` |
 | Hat | `hat1.png` |
+
+Separate left / right leg pictures (optional, for shoes and socks): next to `shoes1.png`
+save `shoes1_L.png` and `shoes1_R.png` (same 851 x 1134 canvas, one shoe each). The pet
+then draws those two on its legs instead of cutting `shoes1.png` at x = 425, so a shoe
+may cross the middle line. Keep `shoes1.png` too (both shoes together): it is the Dress Up
+icon. Same for `socks1_L.png` / `socks1_R.png`, and `_2` boy names (`shoes1_2_L.png`).
 
 More of one kind: add the number (`top2.png`), then add `"top2"` to that list in
 `outfit_config.js`. A new skirt or dress that hangs: `{ id: "skirt2", hangs: true }`.

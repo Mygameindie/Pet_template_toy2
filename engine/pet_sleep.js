@@ -51,7 +51,7 @@
     return img;
   }
 
-  function loadBaseSet(suffix) {
+  function loadHeadSet(suffix) {
     return {
       stand: createImg(`base${suffix}.png`),
       fall: createImg(`base${suffix}.png`),
@@ -66,7 +66,7 @@
     : [{ artSuffix: '', xFrac: 0.5, drawFilter: 'none' }];
   const NUM_PETS = PET_CFG.length;
 
-  const baseSets = PET_CFG.map(c => loadBaseSet(c.artSuffix || ''));
+  const headSets = PET_CFG.map(c => loadHeadSet(c.artSuffix || ''));
 
   const imgs = {
     bed: createImg("bed.png"),
@@ -325,7 +325,7 @@
   const wakeClickBase = (e) => handleWakeClick(e, baseCanvas);
   const wakeClickBlanket = (e) => handleWakeClick(e, blanketCanvas);
 
-  const baseListeners = [
+  const headListeners = [
     ["mousedown", startDragPet],
     ["mousemove", moveDragPet],
     ["mouseup", endDragPet],
@@ -344,7 +344,7 @@
     ["click", wakeClickBlanket],
   ];
 
-  baseListeners.forEach(([ev, fn]) =>
+  headListeners.forEach(([ev, fn]) =>
     baseCanvas.addEventListener(ev, fn, { passive: false })
   );
   blanketListeners.forEach(([ev, fn]) =>
@@ -406,11 +406,11 @@
       const py = petBedY();
       const pet = pets[i];
 
-      let set = baseSets[i] || baseSets[0];
+      let set = headSets[i] || headSets[0];
       let img = set.stand;
       let useTint = false;
       if (!img || img._failed) {
-        set = baseSets[0];
+        set = headSets[0];
         img = set.stand;
         useTint = (i !== 0);
       }
@@ -434,11 +434,11 @@
       if (!pet.visible) return;
 
       const state = pet.dragging ? "fly0" : vy[i] > 2 ? "fall" : "stand";
-      let set = baseSets[i] || baseSets[0];
+      let set = headSets[i] || headSets[0];
       let img = set[state];
       let useTint = false;
       if (!img || img._failed) {
-        set = baseSets[0];
+        set = headSets[0];
         img = set[state];
         useTint = (i !== 0);
       }
@@ -446,6 +446,7 @@
       baseCtx.save();
       baseCtx.filter = useTint ? (pet.drawFilter || "none") : "none";
       if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(baseCtx, state, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h, i);
+      img = (window.PetFace && window.PetFace.shyImg ? window.PetFace.shyImg(img, i) : img);
       safeDraw(baseCtx, img, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h);
 
       if (window.drawOutfitOverlay) {
@@ -513,7 +514,7 @@
     clearInterval(sleepInterval);
     window._petsSleeping = null;
     window.removeEventListener("resize", onResize);
-    baseListeners.forEach(([ev, fn]) => baseCanvas.removeEventListener(ev, fn));
+    headListeners.forEach(([ev, fn]) => baseCanvas.removeEventListener(ev, fn));
     blanketListeners.forEach(([ev, fn]) => blanketCanvas.removeEventListener(ev, fn));
     if (blanketCanvas && blanketCanvas.parentNode) {
       blanketCanvas.parentNode.removeChild(blanketCanvas);

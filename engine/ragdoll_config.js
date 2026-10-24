@@ -46,8 +46,10 @@
   const soft = {
     CL: { x: 381, y: 676, r: 15, m: 0.4, k: 0.12, anchor: 'torso', max: 26, maxX: 7, gravity: 0.35 },    // chest
     CR: { x: 469, y: 676, r: 15, m: 0.4, k: 0.12, anchor: 'torso', max: 26, maxX: 7, gravity: 0.35 },
-    Hr: { x: 425, y: 950, r: 20, m: 0.8, k: 0.09, anchor: 'head',  max: 400 },   // end of the back hair
+    Hr: { x: 425, y: 950, r: 20, m: 0.8, k: 0.03, anchor: 'head',  max: 400, gravity: 4 },   // end of the back hair: hangs down when the pet is held
     Tt: { x: 425, y: 1015, r: 8, m: 0.5, k: 0.07, anchor: 'torso', max: 400 },  // tip of the tail
+    Wl: { x: 250, y: 720, r: 12, m: 0.5, k: 0.10, anchor: 'torso', max: 400, gravity: 0.8 },  // tip of the left wing (wing_L)
+    Wr: { x: 600, y: 720, r: 12, m: 0.5, k: 0.10, anchor: 'torso', max: 400, gravity: 0.8 },  // tip of the right wing (wing_R)
   };
 
   // Bones that never change length. The torso entries make the neck, shoulders,
@@ -59,6 +61,7 @@
     ['SL', 'HL'], ['SR', 'HR'], ['HipL', 'FL'], ['HipR', 'FR'],
     ['N', 'Hr'],
     ['P', 'Tt'],
+    ['SL', 'Wl'], ['SR', 'Wr'],
   ];
 
   // How far a limb may turn from its standing angle, in degrees, relative to
@@ -73,8 +76,10 @@
     { pivot: 'HipL', tip: 'FL', lo: -12, hi: 50, frame: 'torso' },
     { pivot: 'HipR', tip: 'FR', lo: -50, hi: 12, frame: 'torso' },
     { pivot: 'N',    tip: 'Hd', lo: -30, hi: 30, heldLo: -30, heldHi: 30, frame: 'torso' },
-    { pivot: 'N',    tip: 'Hr', lo: -35, hi: 35, frame: 'head' },
+    { pivot: 'N',    tip: 'Hr', lo: -85, hi: 85, frame: 'head' },
     { pivot: 'P',    tip: 'Tt', lo: -50, hi: 50, frame: 'torso' },
+    { pivot: 'SL',   tip: 'Wl', lo: -60, hi: 60, frame: 'torso' },
+    { pivot: 'SR',   tip: 'Wr', lo: -60, hi: 60, frame: 'torso' },
   ];
 
   // Parts, back to front. `file` is images/parts/<file>.png. `pivot` is the joint
@@ -90,12 +95,14 @@
   // hide the end of the arm or leg. Staying behind they'd be left as outline-less
   // blobs when the limb swings away; carried, they stay joined to it.
   const parts = [
-    // Back items, furthest back first: hair, then wings, then tail.
+    // Back items, furthest back first: hair, then wings (one per side, each
+    // turning on its own about its shoulder, like an arm), then tail.
     { id: 'back_hair',  file: 'back_hair',  optional: true, pivot: 'N', child: 'Hr' },
-    { id: 'back_wings', file: 'back_wings', optional: true, pivot: 'N', child: 'P' },
+    { id: 'wing_L',    file: 'wing_L',    optional: true, pivot: 'SL', child: 'Wl' },
+    { id: 'wing_R',    file: 'wing_R',    optional: true, pivot: 'SR', child: 'Wr' },
     { id: 'back_tail',  file: 'back_tail',  optional: true, pivot: 'P', child: 'Tt' },
-    { id: 'leg_L', file: 'leg_L', drop: true, pivot: 'HipL', child: 'FL', region: { t: 'rect', x0: 0,   y0: 868, x1: 425, y1: SRC_H } },
-    { id: 'leg_R', file: 'leg_R', drop: true, pivot: 'HipR', child: 'FR', region: { t: 'rect', x0: 425, y0: 868, x1: SRC_W, y1: SRC_H } },
+    { id: 'leg_L', file: 'leg_L', drop: true, bodyKeeps: LEG_DROP, pivot: 'HipL', child: 'FL', region: { t: 'rect', x0: 0,   y0: 868, x1: 425, y1: SRC_H } },
+    { id: 'leg_R', file: 'leg_R', drop: true, bodyKeeps: LEG_DROP, pivot: 'HipR', child: 'FR', region: { t: 'rect', x0: 425, y0: 868, x1: SRC_W, y1: SRC_H } },
     { id: 'arm_L', file: 'arm_L', pivot: 'SL', child: 'HL', region: { t: 'rect', x0: 0,   y0: 606, x1: 346,   y1: 846 } },
     { id: 'arm_R', file: 'arm_R', pivot: 'SR', child: 'HR', region: { t: 'rect', x0: 505, y0: 606, x1: SRC_W, y1: 846 } },
     { id: 'body',  file: 'body',  pivot: 'N', child: 'P', rest: true },

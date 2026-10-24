@@ -34,7 +34,7 @@
     ? window.GAME_CONFIG.pets
     : [{ artSuffix: "", xFrac: 0.5, drawFilter: "none" }];
 
-  const baseSets = PET_CFG.map(c => {
+  const headSets = PET_CFG.map(c => {
     const sfx = c.artSuffix || "";
     return { normal: createImg(`base${sfx}.png`), hurt: createImg(`base_disgust${sfx}.png`) };
   });
@@ -353,7 +353,7 @@
     }
   }
 
-  baseSets.forEach((set, i) => {
+  headSets.forEach((set, i) => {
     const img = set && set.normal;
     if (!img) return;
     img.addEventListener("load", () => rebuildAlphaMask(img, i));
@@ -520,10 +520,10 @@
       // side: where the blower is under the skirt (-1 left .. 1 right) - that side lifts first.
       const side = pet.wind ? (lastCanvasPoint.x - (pet.x + pet.w / 2)) / (pet.w * 0.38) : 0;
       if (window.ClothWind) window.ClothWind.set(i, pet.wind, side);
-      // The pet is not amused: brief disgust + a troll stat hit while blown.
+      // Wind under the skirt: head_shy_1 while it blows (PetFace.shyImg), Shy +20 per gust tick, plus a troll stat hit.
       if (pet.wind && now > (pet.nextWindTrollAt || 0)) {
         pet.nextWindTrollAt = now + 1500;
-        disgustPet(i, 0, 900);
+        if (window.PetStats) { window.PetStats.troll(i); window.PetStats.shyUp(i, 20); }
       }
     });
   }
@@ -584,11 +584,11 @@
       const recoil = (pet.recoilUntil && now < pet.recoilUntil) ? 10 : 0;
       const wantHurt = (pet.hurtUntil && now < pet.hurtUntil);
 
-      let set = baseSets[i] || baseSets[0];
+      let set = headSets[i] || headSets[0];
       let img = wantHurt ? set.hurt : set.normal;
       let useTintFallback = false;
       if (!img || img._failed) {
-        set = baseSets[0];
+        set = headSets[0];
         img = wantHurt ? set.hurt : set.normal;
         useTintFallback = (i !== 0);
       }
@@ -597,7 +597,7 @@
         ctx.save();
         ctx.filter = useTintFallback ? (pet.drawFilter || "none") : "none";
         if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(ctx, "stand", pet.x, pet.y + recoil, pet.w, pet.h, i);
-        ctx.drawImage(img, pet.x, pet.y + recoil, pet.w, pet.h);
+        ctx.drawImage((window.PetFace && window.PetFace.shyImg ? window.PetFace.shyImg(img, i) : img), pet.x, pet.y + recoil, pet.w, pet.h);
 
         if (window.drawOutfitOverlay) {
           window.drawOutfitOverlay(ctx, "stand", pet.x, pet.y + recoil, pet.w, pet.h, i);

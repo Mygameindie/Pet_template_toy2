@@ -56,6 +56,9 @@ const DRESS1_SKIRT = {
 //                  the canvas height its skirt starts at (a dress: blows: 820).
 //    stiff: true   one solid piece over the chest (a crop top): stays whole on
 //                  the body, its sleeves still follow the arms.
+//    cuffs: true   its sleeve pictures are cuffs stuck to the top: drawn under
+//                  it and carried by the body, not turning with the arms,
+//                  so the arms are held still while it is worn.
 //  Optional extra pictures per garment: <name>_over.png (over the chest, e.g.
 //  bra straps), <name>_under.png (under it), <name>_arm_L/_arm_R.png (sleeves).
 // ===========================================================

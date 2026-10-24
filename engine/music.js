@@ -60,11 +60,12 @@
   // =========================
   // Images (per pet)
   // =========================
-  // Dance frames per pet: base_music1.png / base_music2.png plus the pet's
-  // artSuffix (e.g. base_music1_2.png). If missing, falls back to pet1 frames.
+  // Dance frames per pet: the normal picture (base.png) and base_music2.png plus
+  // the pet's artSuffix (e.g. base_2.png / base_music2_2.png); a missing
+  // base_music2 is the normal body with head_music.png. If missing, falls back to pet1 frames.
   const petImgs = PET_CFG.map(c => {
     const p = { a: new Image(), b: new Image(), current: null, toggle: false };
-    p.a.src = `base_music1${c.artSuffix || ""}.png`;
+    p.a.src = `base${c.artSuffix || ""}.png`;   // normal picture, also shown before/after the music
     p.b.src = `base_music2${c.artSuffix || ""}.png`;
     p.current = p.a;
     return p;
@@ -101,7 +102,7 @@
       const t = getFit(img, i);
       _lastFits[i] = t;
       if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(ctx, "stand", t.x, t.y, t.w, t.h, i);
-      ctx.drawImage(img, t.x, t.y, t.w, t.h);
+      ctx.drawImage((window.PetFace && window.PetFace.shyImg ? window.PetFace.shyImg(img, i) : img), t.x, t.y, t.w, t.h);
 
       // Outfit overlay (per pet)
       if (window.drawOutfitOverlay) {

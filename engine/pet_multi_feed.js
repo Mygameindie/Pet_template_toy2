@@ -102,6 +102,7 @@
       useTintFallback = (i !== 0);
     }
     if (!img || img._failed || !img.complete || img.naturalWidth === 0) return;
+    img = (window.PetFace && window.PetFace.shyImg ? window.PetFace.shyImg(img, i) : img);
 
     ctx.save();
     ctx.filter = useTintFallback ? (pets[i] && pets[i].drawFilter ? pets[i].drawFilter : "none") : "none";
@@ -372,7 +373,7 @@
       // Back pieces (behind the body)
       if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(ctx, "stand", x, y, pet.w, pet.h, i);
 
-      // Base
+      // Head (pet picture)
       safeDrawPet(i, pet.mood, x, y, pet.w, pet.h);
 
       // Outfit overlay (per pet) — tint along with pet if 2 is using fallback

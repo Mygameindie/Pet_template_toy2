@@ -44,7 +44,7 @@
     ? window.GAME_CONFIG.pets
     : [{ artSuffix: '', xFrac: 0.5, drawFilter: 'none' }];
 
-  const baseSets = PET_CFG.map(c => {
+  const headSets = PET_CFG.map(c => {
     const src = `base${c.artSuffix || ''}.png`;
     return { stand: loadImg(src), fly0: loadImg(src), fly1: loadImg(src), fall: loadImg(src) };
   });
@@ -340,14 +340,15 @@
       const i = pet.idx;
       const state = getPetState(pet);
 
-      let set = baseSets[i];
+      let set = headSets[i];
       let img = set[state];
       const needsTint = i !== 0 && (img?._failed || !img?.complete);
-      if (needsTint) { set = baseSets[0]; img = set[state]; }
+      if (needsTint) { set = headSets[0]; img = set[state]; }
 
       ctx.save();
       if (needsTint) ctx.filter = PET_CFG[i].drawFilter || 'none';
       if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(ctx, state, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H, i);
+      img = (window.PetFace && window.PetFace.shyImg ? window.PetFace.shyImg(img, i) : img);
       safeDraw(img, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H);
       if (typeof window.drawOutfitOverlay === 'function') {
         window.drawOutfitOverlay(ctx, state, pet.x - PET_W / 2, pet.y - PET_H / 2, PET_W, PET_H, i);

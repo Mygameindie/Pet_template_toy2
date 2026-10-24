@@ -39,8 +39,14 @@
 
   // Analog of Toy3's setGenital(num, on): hold the pet's toy-touched image
   // while a toy overlaps it, revert when the toy leaves.
+  const toyOn = [];
   function setPetToy(index, on) {
     try {
+      // Another toy may still be on this pet: only the last one leaving clears it.
+      if (!on && [...colliding].some(k => Number(k.split('-')[1]) === index)) return;
+      if (on && !toyOn[index] && window.PetStats && window.PetStats.toyTouch) window.PetStats.toyTouch(index);
+      toyOn[index] = !!on;
+      (window._petToy = window._petToy || [])[index] = !!on;   // read by PetFace.shyImg in every mode
       if (typeof window.setPetToyState === 'function') {
         window.setPetToyState(index, on);
       }
@@ -207,6 +213,8 @@
         if (window.PetStats && typeof window.PetStats.play === 'function') {
           window.PetStats.play(n);
         }
+        // ...and keep making it shyer the longer the toy stays on it.
+        if (window.PetStats && typeof window.PetStats.shyUp === 'function') window.PetStats.shyUp(n, 4);
       } catch (_) {}
     });
   }
@@ -356,7 +364,8 @@
     }
 
     modeMenu.querySelectorAll('button').forEach(btn => {
-      if (btn === toggleBtn) return;
+      // Confidence is not a mode: it must not hide the Toys button.
+      if (btn === toggleBtn || btn.id === 'confidence-btn') return;
       btn.addEventListener('click', () => {
         setToyUIVisible(btn.id === 'normal-btn');
       });

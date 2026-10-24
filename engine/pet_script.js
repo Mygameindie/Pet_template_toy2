@@ -1,5 +1,5 @@
 // ===========================================================
-// 🐾 pet_script.js — Base + Button Outfit System (SINGLE IIFE)
+// 🐾 pet_script.js — Head + Button Outfit System (SINGLE IIFE)
 // ===========================================================
 (function () {
   const canvas = document.getElementById('canvas');
@@ -30,7 +30,7 @@
   // Per-pet base sets.
   // Each pet's art uses its config artSuffix: "" -> base.png, "_2" -> base_2.png.
   // If missing, we fall back to pet1 art and apply the pet's drawFilter so it is still visually distinct.
-  function loadBaseSet(suffix) {
+  function loadHeadSet(suffix) {
     return {
       stand: createImg(`base${suffix}.png`),
       fall: createImg(`base${suffix}.png`),
@@ -44,8 +44,8 @@
     };
   }
 
-  // === Base images (per pet) ===
-  const baseSets = PET_CFG.map(c => loadBaseSet(c.artSuffix || ''));
+  // === Head images (per pet) ===
+  const headSets = PET_CFG.map(c => loadHeadSet(c.artSuffix || ''));
 
   // NOTE: Do NOT create a clothes button here.
   // outfit_system.js creates ONE global button and keeps outfit state in window.currentOutfit.
@@ -97,7 +97,7 @@
   // at the art's true proportions AND at the same size. Height stays the display
   // size; width is derived from the image's natural dimensions once it loads.
   function syncPetAspect() {
-    const img = baseSets[0].stand;
+    const img = headSets[0].stand;
     if (!img || img._failed || !img.naturalWidth || !img.naturalHeight) return;
     const aspect = img.naturalWidth / img.naturalHeight;
     pets.forEach(pet => {
@@ -109,9 +109,9 @@
     });
   }
 
-  const baseImg = baseSets[0].stand;
-  if (baseImg && baseImg.complete && baseImg.naturalWidth) syncPetAspect();
-  else if (baseImg) baseImg.addEventListener('load', syncPetAspect);
+  const headImg = headSets[0].stand;
+  if (headImg && headImg.complete && headImg.naturalWidth) syncPetAspect();
+  else if (headImg) headImg.addEventListener('load', syncPetAspect);
 
   // === Physics ===
   // All values are tuned per 60fps frame; update() scales by real elapsed time
@@ -151,6 +151,17 @@
   }
   function partSuffix(i) { return (PET_CFG[i] && PET_CFG[i].artSuffix) || ''; }
 
+  // Heads besides the normal one: 1 = touched by a toy (head_1.png), the rest
+  // are set by PetFace (pet_stats.js) from what you do to the pet (shy_1 = shy + toy).
+  const FACES = ['1', 'happy', 'disgust', 'sick', 'heal', 'music', 'shower', 'shy', 'shy_1'];
+  // The face the pet wears right now, or null for its normal head.
+  function faceOf(pet, i) {
+    let name = window.PetFace ? window.PetFace.get(i) : null;
+    // A shy pet touched by a toy wears head_shy_1.png (else head_1.png).
+    if (pet._toyActive) name = name === 'shy' ? 'shy_1' : '1';
+    return name && pet.faceImgs && pet.faceImgs[name] ? name : null;
+  }
+
   function loadParts(pet, i) {
     if (!RAGDOLL_ON) return;
     if (!pet.body) {
@@ -159,21 +170,41 @@
     }
     const suffix = partSuffix(i);
     const imgs = {};
-    let pending = RCFG.parts.length;
+    // Optional faces: head_<name>.png (head_<name>_2.png for character 2) for
+    // each name in FACES. Same ragdoll body, only the head picture changes.
+    const faces = FACES.map(n => ({ file: 'head', key: 'face_' + n, name: 'head_' + n + suffix }));
+    let pending = RCFG.parts.length + faces.length;
     pet.partsSuffix = suffix;
-    RCFG.parts.forEach(part => {
+    // Character art that doesn't exist yet (head_2.png ...) falls back to the
+    // plain picture, so every character is a ragdoll as soon as character 1 is.
+    // If the BODY itself is the plain one, the pet is drawn with its drawFilter
+    // tint so it still looks like a different character.
+    let borrowed = false;
+    RCFG.parts.concat(faces).forEach(part => {
       const im = new Image();
+      const plain = 'images/parts/' + (part.file) + '.png';
+      let triedPlain = !suffix;
       const done = ok => {
-        if (ok) imgs[part.file] = im;
+        if (ok) imgs[part.key || part.file] = im;
+        if (!ok && !triedPlain) {
+          triedPlain = true;
+          if (part.file === 'body') borrowed = true;
+          if (part.key) { im.src = 'images/parts/' + part.name.replace(suffix, '') + '.png'; return; }
+          im.src = plain;
+          return;
+        }
         if (--pending > 0 || !alive || pet.partsSuffix !== suffix) return;
         pet.partImgs = imgs;
+        pet.faceImgs = {};
+        FACES.forEach(n => { if (imgs['face_' + n]) pet.faceImgs[n] = imgs['face_' + n]; });
         pet.hasParts = RCFG.parts.every(q => q.optional || imgs[q.file]);
+        pet.tintArt = borrowed;   // drawing character 1's body: tint it (drawFilter)
         pet.artSig = null;
         pet.placed = false;
       };
       im.onload = () => done(true);
       im.onerror = () => done(false);
-      im.src = 'images/parts/' + part.file + suffix + '.png';
+      im.src = 'images/parts/' + (part.name || part.file + suffix) + '.png';
     });
   }
 
@@ -187,9 +218,9 @@
     Object.keys(sel).forEach(k => {
       const it = cat[k] && cat[k].items && cat[k].items[sel[k]];
       if (!it) return;
-      ['img', 'back', 'over', 'under', 'armL', 'armR'].forEach(n => {
+      ['img', 'back', 'over', 'under', 'armL', 'armR', 'legL', 'legR'].forEach(n => {
         const im = it[n];
-        ready += im ? (im._failed ? 'x' : im.complete ? '1' : '0') : '-';
+        ready += im ? (im._failed ? 'x' : im.complete && (!window.outfitTintReady || window.outfitTintReady(im, col[k])) ? '1' : '0') : '-';
       });
     });
     return JSON.stringify(sel) + JSON.stringify(col) + ready + '|' + window._modeName + '|' + pet_h_sig();
@@ -232,28 +263,65 @@
   // Cut the clothes up along the body parts and hand them to the skeleton.
   // Only redone when the outfit or the art changes.
   function buildBody(pet, i) {
-    const sig = wornSig(i);
+    // A garment with cuffs: true (outfit_config.js) has its sleeves stuck to the top,
+    // so the arms can't move away from them.
+    pet.body.armsLocked = Object.keys(window.selectedClothes[i] || {}).some(k => {
+      const cat = (window.dressUpCatalog[i] || window.dressUpCatalog[0] || {})[k];
+      const it = cat && cat.items && cat.items[window.selectedClothes[i][k]];
+      return !!(it && it.cuffs);
+    });
+    const face = faceOf(pet, i);
+    const sig = wornSig(i) + '|face' + (face || '');
     if (sig === pet.artSig) return;
     pet.artSig = sig;
     const cs = (pet.h / RCFG.SRC_H) * hdDpr();
     const W = Math.round(RCFG.SRC_W * cs), H = Math.round(RCFG.SRC_H * cs);
     const sized = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
     const cloth = sized(), hang = sized(), over = sized(), under = sized(), blow = sized(),
-      stiff = sized(), armL = sized(), armR = sized(), back = sized();
+      stiff = sized(), armL = sized(), armR = sized(), legL = sized(), legR = sized(), legTop = sized(), back = sized(), overTop = sized();
     let blowFrom = Infinity;
     const D = window.drawOutfitOverlay;
     if (typeof D === 'function') {
-      const covers = it => !it.stiff && coversChest(it);
-      D(cloth.getContext('2d'), 'stand', 0, 0, W, H, i, it => !it.stiff && !it.blows && !(covers(it) && !it.hangs));
-      D(hang.getContext('2d'), 'stand', 0, 0, W, H, i, it => (it.hangs || it.blows) && !it.stiff);
+      // whole: true (outfit_config.js): carried by the body in one piece, drawn
+      // over the chest (a bra: its cups and straps never go off with an arm).
+      const covers = it => !it.stiff && !it.whole && coversChest(it);
+      // A garment with its own <name>_L / <name>_R leg pictures (shoes, socks) is
+      // not cut along the legs: those two pictures replace it on the legs.
+      const legPic = im => !!im && !im._failed && im.complete && im.naturalWidth > 0;
+      const ownLegs = it => legPic(it.legL) || legPic(it.legR);
+      D(cloth.getContext('2d'), 'stand', 0, 0, W, H, i, it => !ownLegs(it) && !it.stiff && !it.whole && !it.blows && !(covers(it) && !it.hangs));
+      // Clothes worn OVER the leg pictures (pants over shoes, by z in outfit_config.js)
+      // are also drawn again above them, on the legs only (see buildArt).
+      let legZ = -Infinity;
+      Object.keys(window.selectedClothes[i] || {}).forEach(k => {
+        const cat = (window.dressUpCatalog[i] || window.dressUpCatalog[0] || {})[k];
+        const it = cat && cat.items && cat.items[window.selectedClothes[i][k]];
+        if (it && ownLegs(it)) legZ = Math.max(legZ, it.z || 0);
+      });
+      if (isFinite(legZ)) {
+        D(legTop.getContext('2d'), 'stand', 0, 0, W, H, i, it => it.z > legZ && !ownLegs(it) && !it.stiff && !it.whole && !it.blows && !it.hangs && !covers(it));
+      }
+      D(hang.getContext('2d'), 'stand', 0, 0, W, H, i, it => (it.hangs || it.blows) && !it.stiff && !it.whole);
       D(blow.getContext('2d'), 'stand', 0, 0, W, H, i, it => {
-        if (!it.blows || it.stiff) return false;
+        if (!it.blows || it.stiff || it.whole) return false;
         if (typeof it.blows === 'number') blowFrom = Math.min(blowFrom, it.blows);
         return true;
       });
-      D(over.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'over');
+      // A garment's own _over picture (a dress's bust pieces) goes ABOVE that
+      // garment; the over pictures of other things (a bra's straps) stay
+      // under the stiff top / dress worn over them.
+      // A whole garment (a bra) is drawn first on the body's over layer, so a dress
+      // or stiff top worn over it still covers it.
+      const ownsTop = it => !it.whole && (it.stiff || coversChest(it));
+      D(over.getContext('2d'), 'stand', 0, 0, W, H, i, it => it.whole);
+      D(over.getContext('2d'), 'stand', 0, 0, W, H, i, it => !ownsTop(it), 'over');
+      D(overTop.getContext('2d'), 'stand', 0, 0, W, H, i, ownsTop, 'over');
       const sx = stiff.getContext('2d');
-      D(sx, 'stand', 0, 0, W, H, i, it => it.stiff || (covers(it) && !it.hangs && !it.blows));
+      // cuffs: true (outfit_config.js): the sleeves are part of the top, not the arms:
+      // carried by the body and drawn just under the top, so they stay stuck to it.
+      D(sx, 'stand', 0, 0, W, H, i, it => it.cuffs, 'armL');
+      D(sx, 'stand', 0, 0, W, H, i, it => it.cuffs, 'armR');
+      D(sx, 'stand', 0, 0, W, H, i, it => !it.whole && (it.stiff || (covers(it) && !it.hangs && !it.blows)));
       // A dress (or other hanging garment) that covers the chest: its top half
       // goes over the chest like a top, its skirt still hangs / blows.
       const tops = sized(), tx = tops.getContext('2d');
@@ -269,16 +337,19 @@
         sx.drawImage(tops, 0, 0);
       }
       D(under.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'under');
-      D(armL.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'armL');
-      D(armR.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'armR');
+      D(armL.getContext('2d'), 'stand', 0, 0, W, H, i, it => !it.cuffs, 'armL');
+      D(armR.getContext('2d'), 'stand', 0, 0, W, H, i, it => !it.cuffs, 'armR');
+      D(legL.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'legL');
+      D(legR.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'legR');
     }
     if (typeof window.drawOutfitBehind === 'function') {
       window.drawOutfitBehind(back.getContext('2d'), 'stand', 0, 0, W, H, i, () => true);
     }
     pet.body.layout(pet.h / RCFG.SRC_H);
     try {
-      pet.body.buildArt(pet.partImgs, cloth, cs, hang, over, under, blow,
-        isFinite(blowFrom) ? blowFrom : null, stiff, { arm_L: armL, arm_R: armR }, back);
+      const partImgs = face ? Object.assign({}, pet.partImgs, { head: pet.faceImgs[face] }) : pet.partImgs;
+      pet.body.buildArt(partImgs, cloth, cs, hang, over, under, blow,
+        isFinite(blowFrom) ? blowFrom : null, stiff, { arm_L: armL, arm_R: armR, armArt: !!pet.body.armsLocked, leg_L: legL, leg_R: legR, legTop }, back, overTop);
     } catch (err) {
       // Reading the pictures' pixels is refused when the game is opened as a
       // file:// page (serve it over http, e.g. GitHub Pages). Keep the sprite.
@@ -295,9 +366,9 @@
     if (!RAGDOLL_ON || !pet.body || !pet.hasParts) return false;
     const now = performance.now();
     if (window.ClothWind && window.ClothWind.get(i) > 0) pet.spriteUntil = now + 1500;
-    if (pet._toyActive) {
-      const set = baseSets[i] || baseSets[0];
-      if (set.toy && !set.toy._failed && !set.toy._fallbackBase && set.toy.complete && set.toy.naturalWidth) pet.spriteUntil = now + 300;
+    if (pet._toyActive && !(pet.faceImgs && pet.faceImgs['1'])) {
+      const set = headSets[i] || headSets[0];
+      if (set.toy && !set.toy._failed && !set.toy._fallbackHead && set.toy.complete && set.toy.naturalWidth) pet.spriteUntil = now + 300;
     }
     return !(pet.spriteUntil > now);
   }
@@ -359,9 +430,6 @@
   }
 
   pets.forEach(loadParts);
-  if (window.PetGender && typeof window.PetGender.onChange === 'function') {
-    window.PetGender.onChange(() => { if (alive) pets.forEach(loadParts); });
-  }
 
   // === Fly animation ===
   const speed = 10;
@@ -473,7 +541,10 @@
     if (activePet) {
       // Playing with pet boosts happiness
       const petIdx = pets.indexOf(activePet);
-      if (petIdx >= 0 && window.PetStats) window.PetStats.play(petIdx);
+      if (petIdx >= 0 && window.PetStats) {
+        window.PetStats.play(petIdx);
+        window.PetStats.shyUp(petIdx, 8);   // being picked up / petted
+      }
       activePet.dragging = false;
     }
     activePet = null;
@@ -499,7 +570,15 @@
   function onResize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    groundY = canvas.height - groundHeight;
+    syncGround();
+  }
+  // canvas_fix.js resizes the canvas on its own (after coming back from the
+  // share sheet / another app, the window size settles late and no 'resize'
+  // reaches this mode), so the ground is re-read from the canvas every frame.
+  function syncGround() {
+    const gy = canvas.height - groundHeight;
+    if (gy === groundY) return;
+    groundY = gy;
 
     // keep pets in bounds
     pets.forEach(p => {
@@ -516,6 +595,7 @@
   // === Update ===
   let lastT = performance.now();
   function update() {
+    syncGround();
     const now = performance.now();
     // dt in "60fps frames", capped so a background-tab hiccup can't launch pets.
     const dt = clamp((now - lastT) / 16.667, 0.25, 2.5);
@@ -702,12 +782,12 @@
     pets.forEach((pet, i) => {
       const state = getState(pet);
 
-      // choose base set; if this pet's asset is missing, use pet1's and tint
-      let set = baseSets[i] || baseSets[0];
+      // choose base set
+      let set = headSets[i] || headSets[0];
       let img = set[state];
       let useTintFallback = false;
       if (!img || img._failed) {
-        set = baseSets[0];
+        set = headSets[0];
         img = set[state];
         useTintFallback = (i !== 0);
       }
@@ -718,14 +798,17 @@
       if (pet._toyActive) {
         let toyImg = set.toy;
         if (!toyImg || toyImg._failed) {
-          toyImg = baseSets[0].toy;
+          toyImg = headSets[0].toy;
           if (toyImg && !toyImg._failed && i !== 0) useTintFallback = true;
         }
         if (toyImg && !toyImg._failed) img = toyImg;
       }
 
+      if (window.PetFace && window.PetFace.shyImg && !pet._toyActive) img = window.PetFace.shyImg(img, i);
+
       if (isRag(pet, i) && pet.body && pet.body.parts) {
         ctx.save();
+        if (pet.tintArt) ctx.filter = pet.drawFilter;
         pet.body.draw(ctx, 0, 0, hdDpr());
         ctx.restore();
         return;
@@ -748,7 +831,7 @@
       // Back pieces (behind the body)
       if (typeof window.drawOutfitBehind === 'function') window.drawOutfitBehind(ctx, state, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h, i);
 
-      // Base (naked)
+      // Head (naked)
       safeDraw(img, pet.x - pet.w / 2, pet.y - pet.h / 2, pet.w, pet.h);
 
       // Outfit overlay (per pet)

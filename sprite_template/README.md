@@ -15,7 +15,7 @@ Parts (name each file `<part>.png`, add `_2` for character 2, e.g. `head_2.png`)
 
 | Part | Contents | Rotates around |
 |---|---|---|
-| `back_wings` | wings (draw them whole, even where the body would hide them) | neck / shoulders |
+| `wing_L`, `wing_R` | left / right wing, two separate pictures (draw each whole, even where the body would hide it); each flaps on its own | its shoulder |
 | `back_tail` | tail | pelvis |
 | `back_hair` | hair behind the head | neck |
 | `thigh_L`, `thigh_R` | upper leg | hip |
@@ -25,6 +25,6 @@ Parts (name each file `<part>.png`, add `_2` for character 2, e.g. `head_2.png`)
 | `forearm_L`, `forearm_R` | elbow to hand | elbow |
 | `head` | head, face, front hair, ears / horns | neck |
 
-Draw order, back to front: back_hair, back_wings, back_tail, thighs, shins, body, upper arms, forearms, head.
+Draw order, back to front: back_hair, wing_L, wing_R, back_tail, thighs, shins, body, upper arms, forearms, head.
 
 Left / right are the character's own left and right, as seen from the front: the **L** parts are on the viewer's left in the template picture.

@@ -44,6 +44,15 @@
   }
 
   window.addEventListener("resize", scheduleResize);
+  // Safari / iPad often send no resize event after the share sheet, the link
+  // bar or another app (the window size settles late), which left the canvas
+  // at its old size. Re-check when the page comes back, and now and then
+  // while it is open (resizeCanvas does nothing when the size is unchanged).
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleResize(); });
+  window.addEventListener("pageshow", scheduleResize);
+  window.addEventListener("focus", scheduleResize);
+  setInterval(() => { if (!document.hidden) resizeCanvas(); }, 500);
+
   window.addEventListener("orientationchange", () => {
     setTimeout(resizeCanvas, 200);
   });

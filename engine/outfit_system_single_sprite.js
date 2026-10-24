@@ -34,6 +34,7 @@
       { key: "top", label: "Top", z: 120 },
       { key: "bottom", label: "Pants / Skirt", z: 110 },
       { key: "dress", label: "Dress", z: 130 },
+      { key: "socks", label: "Socks", z: 85 },
       { key: "shoes", label: "Shoes", z: 90 },
       { key: "hat", label: "Hat", z: 180 },
     ],
@@ -110,6 +111,8 @@
       // Ragdoll flags (see outfit_config.js): hangs / stiff / blows.
       hangs: entry.hangs,
       stiff: entry.stiff,
+      whole: entry.whole,
+      cuffs: entry.cuffs,
       blows: entry.blows,
     };
   }
@@ -124,11 +127,11 @@
   }
 
   // The optional extra pictures of a garment (<name>_over / _under / _arm_L /
-  // _arm_R). Only asked for once the garment's own picture has loaded, so
+  // _arm_R / _L / _R; the last two are the ragdoll's own left / right leg pictures). Only asked for once the garment's own picture has loaded, so
   // clothes that don't exist don't cost four failed requests each.
   function extraLayers(prefix) {
     const main = new Image();
-    const names = { over: "_over", under: "_under", armL: "_arm_L", armR: "_arm_R" };
+    const names = { over: "_over", under: "_under", armL: "_arm_L", armR: "_arm_R", legL: "_L", legR: "_R" };
     const out = {};
     Object.keys(names).forEach(k => {
       const im = new Image();
@@ -169,7 +172,7 @@
         list.forEach(entry => {
           const it = normItem(entry);
           if (it) catalog[p][c.key].items[it.id] = {
-            id: it.id, label: it.label, img: img(`${it.prefix}.png`), back: it.back ? img(`${it.back}.png`) : null,
+            id: it.id, label: it.label, z: Number(c.z) || 100, img: img(`${it.prefix}.png`), back: it.back ? img(`${it.back}.png`) : null,
             // Optional extra layers of the same garment (missing files are fine):
             // <name>_over.png drawn over the chest (bra straps), <name>_under.png
             // under it, <name>_arm_L/_arm_R.png the sleeves as their own pictures.
@@ -179,6 +182,8 @@
             hangs: it.hangs === undefined ? c.hangs : !!it.hangs,
             stiff: !!it.stiff,
             blows: it.blows === undefined ? c.blows : it.blows,
+            whole: !!it.whole,
+            cuffs: !!it.cuffs,
           };
         });
       });
@@ -361,6 +366,15 @@
     tintCache.set(key, out);
     return out;
   }
+  // Is the picture ready to draw in this colour? A tinted picture is made a
+  // moment after it is first asked for, so anything that builds from the clothes
+  // once (the ragdoll) must wait for it, or it builds with the garment missing.
+  window.outfitTintReady = function (image, colorName) {
+    const hex = COLORS[colorName || DEFAULT_COLOR];
+    if (!hex || !image) return true;
+    const t = tintedImage(image, hex);
+    return t === image || (!!t.complete && t.naturalWidth > 0);
+  };
   function safeDraw(ctx, image, x, y, w, h) {
     if (!image || image._failed || !image.complete || !image.naturalWidth) return false;
     ctx.drawImage(image, x, y, w, h);
@@ -885,6 +899,7 @@
     const cellW = bw / cols, cellH = bh / rowsN;
     const flareMax = Math.max(pr.flare, 0.01);
     const wave = pr.wave || 0, curve = pr.curve || 0;
+    const invert = pr.invert || 0;   // 0 = normal; 1.5-2 = blown inside out (see place())
     // One side lifts first: the side above the blower, plus a slow wobble.
     const tilt = (pr.tilt || 0) * clampN(sim.side * 0.9 + 0.35 * Math.sin(tt * 1.7 + ph), -1.2, 1.2);
 
@@ -906,7 +921,11 @@
       const breathe = 1 + fl + (pr.ripple || 0) * ef * Math.sin(v * 16 - now * 0.013);
       outX = c0 + (sx - c0) * Math.max(0.2, breathe) + sw * nw +
         wave * len * 0.25 * hem * Math.cos(u * 3.1 - tt * 8.3 + ph);
-      outY = startY + len * (v - up) - len * hem * (curve * u * u + wave * wv + tilt * u);
+      // invert: the skirt is blown inside out, like an umbrella turned upside
+      // down. The hem swings up past the waist (rows shrink to a flat disc, then
+      // flip over the body) instead of stopping at it.
+      const rise = invert ? v * (1 - invert * blown) : v - up;
+      outY = startY + len * rise - len * hem * (curve * u * u + wave * wv + tilt * u);
       outSlope = hem * wave * slope;
     }
 
@@ -914,7 +933,7 @@
     const E = cols + 1;
     let topX = new Float32Array(E), topY = new Float32Array(E), topS = new Float32Array(E);
     let botX = new Float32Array(E), botY = new Float32Array(E), botS = new Float32Array(E);
-    const lowY = startY - len * 0.75;
+    const lowY = startY - len * (0.75 + Math.max(0, invert - 1));
     for (let c = 0; c < E; c++) {
       place(x0 + c * cellW, y0);
       topX[c] = outX; topY[c] = Math.max(outY, lowY); topS[c] = outSlope;
@@ -925,7 +944,9 @@
       const sy0 = y0 + r * cellH, sy1 = sy0 + cellH;
       for (let c = 0; c < E; c++) {
         place(x0 + c * cellW, sy1);
-        botX[c] = outX; botY[c] = Math.max(Math.max(outY, lowY), topY[c] + minH); botS[c] = outSlope;
+        botX[c] = outX; botS[c] = outSlope;
+        // Normally the cloth folds up and never turns over; inverted it may.
+        botY[c] = invert ? Math.max(outY, lowY) : Math.max(Math.max(outY, lowY), topY[c] + minH);
       }
       // Only the cells that hold cloth in this row.
       const ri = clampN(Math.floor(sy0 + cellH / 2 - y0), 0, bh - 1);
@@ -937,7 +958,7 @@
           const dx1 = ((topX[c + 1] + botX[c + 1]) / 2 - ox) * s;
           const dy0 = ((topY[c] + topY[c + 1]) / 2 - oy) * s;
           const dy1 = ((botY[c] + botY[c + 1]) / 2 - oy) * s;
-          const lx = Math.min(dx0, dx1), dw = Math.abs(dx1 - dx0) + 1.2, dh = dy1 - dy0 + 1;
+          const lx = Math.min(dx0, dx1), dw = Math.abs(dx1 - dx0) + 1.2, dh = dy1 - dy0 + (dy1 < dy0 ? -1 : 1);
           cx.drawImage(L.moving, c * cellW, r * cellH, cellW, cellH, lx, dy0, dw, dh);
         }
         // Fold light and shade, only where the cloth is waving.
@@ -950,7 +971,7 @@
             const dy1 = ((botY[c] + botY[c + 1]) / 2 - oy) * s;
             // Folds turning away are darker; cloth bunched up (rows pushed
             // together as the hem rises) shows its shadowed inside.
-            const bunch = Math.max(0, 0.85 - (dy1 - dy0) / (cellH * s)) * 1.6;
+            const bunch = Math.min(1, Math.max(0, 0.85 - (dy1 - dy0) / (cellH * s)) * 1.6);
             const sl = (topS[c] + topS[c + 1] + botS[c] + botS[c + 1]) / 4 + bunch * 0.3;
             const lvl = Math.min(8, Math.round(Math.abs(sl) * 20));
             if (lvl < 1) continue;
@@ -1029,6 +1050,7 @@
     } else if (it.img && !it.img._failed) {
       const im = document.createElement("img");
       im.src = it.img.src;
+      cropToContent(it.img.src, im);
       im.alt = it.label || "";
       im.draggable = false;
       im.style.cssText = "flex:1;width:48px;height:48px;object-fit:contain;";
@@ -1052,6 +1074,39 @@
       d.style.cssText = "flex:1;display:flex;align-items:center;font-size:24px;opacity:.55;";
       return d;
     }
+  }
+
+  // Art is drawn on a full-size canvas, so a small item (a crop top) looks tiny as a
+  // thumbnail. Swap in a copy cropped to the visible pixels; keeps the original if
+  // the canvas can't be read.
+  const cropCache = {};
+  function cropToContent(src, imgEl) {
+    if (cropCache[src]) { imgEl.src = cropCache[src]; return; }
+    const full = new Image();
+    full.onload = () => {
+      try {
+        const c = document.createElement("canvas");
+        c.width = full.naturalWidth; c.height = full.naturalHeight;
+        const x = c.getContext("2d");
+        x.drawImage(full, 0, 0);
+        const d = x.getImageData(0, 0, c.width, c.height).data;
+        let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+        for (let y = 0; y < c.height; y++) for (let px = 0; px < c.width; px++) {
+          if (d[(y * c.width + px) * 4 + 3] > 8) {
+            if (px < x0) x0 = px; if (px > x1) x1 = px;
+            if (y < y0) y0 = y; if (y > y1) y1 = y;
+          }
+        }
+        if (x1 < 0) return;
+        const w = x1 - x0 + 1, h = y1 - y0 + 1;
+        const o = document.createElement("canvas");
+        o.width = w; o.height = h;
+        o.getContext("2d").drawImage(c, x0, y0, w, h, 0, 0, w, h);
+        cropCache[src] = o.toDataURL("image/png");
+        imgEl.src = cropCache[src];
+      } catch (e) { /* tainted canvas: keep the full image */ }
+    };
+    full.src = src;
   }
 
   function renderPanel() {
@@ -1104,8 +1159,7 @@
 
     const items = document.createElement("div");
     items.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;";
-    // Only offer items this character has art for.
-    Object.entries(availableItems(p, selectedCategory)).forEach(([id, it]) => {
+    Object.entries(cat.items || {}).forEach(([id, it]) => {
       const active = String(window.selectedClothes[p] && window.selectedClothes[p][selectedCategory]) === String(id);
       const b = itemThumb(it, active, () => {
         window.selectedClothes[p][selectedCategory] = id === "0" ? 0 : id;
@@ -1220,6 +1274,12 @@
       }
       const full = !only && !behind && !catBehind;
       if (full && extra("under")) drew = true;
+      // Sleeves (<name>_arm_L / _arm_R) go behind the garment's own picture, so the
+      // top lies over the sleeve roots (the ragdoll draws them in the same order).
+      if (full) {
+        if (extra("armL")) drew = true;
+        if (extra("armR")) drew = true;
+      }
       if (behind) {
         const piece = catBehind ? it.img : it.back;
         if (piece && drawCloth(ctx, p, k, id, piece, x, y, w, h, true, catBehind ? null : it.img)) drew = true;
@@ -1228,8 +1288,6 @@
       }
       if (full) {
         if (extra("over")) drew = true;
-        if (extra("armL")) drew = true;
-        if (extra("armR")) drew = true;
       }
     });
     return drew;
