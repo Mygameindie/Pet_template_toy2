@@ -270,6 +270,12 @@
       const it = cat && cat.items && cat.items[window.selectedClothes[i][k]];
       return !!(it && it.cuffs);
     });
+    // suit: true (outfit_config.js): the garment covers the legs, so the bare ones are left out.
+    const hideLegs = Object.keys(window.selectedClothes[i] || {}).some(k => {
+      const cat = (window.dressUpCatalog[i] || window.dressUpCatalog[0] || {})[k];
+      const it = cat && cat.items && cat.items[window.selectedClothes[i][k]];
+      return !!(it && it.suit);
+    });
     const face = faceOf(pet, i);
     const sig = wornSig(i) + '|face' + (face || '');
     if (sig === pet.artSig) return;
@@ -278,18 +284,31 @@
     const W = Math.round(RCFG.SRC_W * cs), H = Math.round(RCFG.SRC_H * cs);
     const sized = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
     const cloth = sized(), hang = sized(), over = sized(), under = sized(), blow = sized(),
-      stiff = sized(), armL = sized(), armR = sized(), legL = sized(), legR = sized(), legTop = sized(), back = sized(), overTop = sized();
+      stiff = sized(), armL = sized(), armR = sized(), legL = sized(), legR = sized(), legTop = sized(), back = sized(), overTop = sized(), collar = sized();
     let blowFrom = Infinity;
     const D = window.drawOutfitOverlay;
     if (typeof D === 'function') {
       // whole: true (outfit_config.js): carried by the body in one piece, drawn
       // over the chest (a bra: its cups and straps never go off with an arm).
-      const covers = it => !it.stiff && !it.whole && coversChest(it);
+      // A suit (bodysuit) is cut up exactly like pants + a top: it never takes the whole-piece route.
+      const covers = it => !it.stiff && !it.whole && !it.suit && coversChest(it);
       // A garment with its own <name>_L / <name>_R leg pictures (shoes, socks) is
       // not cut along the legs: those two pictures replace it on the legs.
       const legPic = im => !!im && !im._failed && im.complete && im.naturalWidth > 0;
       const ownLegs = it => legPic(it.legL) || legPic(it.legR);
-      D(cloth.getContext('2d'), 'stand', 0, 0, W, H, i, it => !ownLegs(it) && !it.stiff && !it.whole && !it.blows && !(covers(it) && !it.hangs));
+      D(cloth.getContext('2d'), 'stand', 0, 0, W, H, i, it => !ownLegs(it) && !it.stiff && !it.suit && !it.whole && !it.blows && !(covers(it) && !it.hangs));
+      // suit: true (a bodysuit) = top + pants: above the legs' top line it goes in the
+      // stiff (top) route, whole over the chest; from there down it is cut along the
+      // legs like pants. The two share a few px so no seam shows where they meet.
+      const legTopY = (RCFG.parts.find(q => q.id === 'leg_L') || { region: { y0: 868 } }).region.y0;
+      const suitPart = (fromY, toY) => {
+        const c = sized(), x = c.getContext('2d');
+        D(x, 'stand', 0, 0, W, H, i, it => !!it.suit && !ownLegs(it));
+        if (fromY > 0) x.clearRect(0, 0, W, Math.round(fromY * cs));
+        if (toY < RCFG.SRC_H) x.clearRect(0, Math.round(toY * cs), W, H);
+        return c;
+      };
+      cloth.getContext('2d').drawImage(suitPart(legTopY - 8, RCFG.SRC_H), 0, 0);
       // Clothes worn OVER the leg pictures (pants over shoes, by z in outfit_config.js)
       // are also drawn again above them, on the legs only (see buildArt).
       let legZ = -Infinity;
@@ -312,7 +331,7 @@
       // under the stiff top / dress worn over them.
       // A whole garment (a bra) is drawn first on the body's over layer, so a dress
       // or stiff top worn over it still covers it.
-      const ownsTop = it => !it.whole && (it.stiff || coversChest(it));
+      const ownsTop = it => !it.whole && (it.stiff || it.suit || coversChest(it));
       D(over.getContext('2d'), 'stand', 0, 0, W, H, i, it => it.whole);
       D(over.getContext('2d'), 'stand', 0, 0, W, H, i, it => !ownsTop(it), 'over');
       D(overTop.getContext('2d'), 'stand', 0, 0, W, H, i, ownsTop, 'over');
@@ -321,6 +340,17 @@
       // carried by the body and drawn just under the top, so they stay stuck to it.
       D(sx, 'stand', 0, 0, W, H, i, it => it.cuffs, 'armL');
       D(sx, 'stand', 0, 0, W, H, i, it => it.cuffs, 'armR');
+      sx.drawImage(suitPart(0, legTopY), 0, 0);
+      // The suit's collar (its neckline) is also drawn over the neck, so the neck
+      // is not cropped by it: the front of the collar wraps round it.
+      if (hideLegs) {
+        const cx = collar.getContext('2d');
+        cx.drawImage(suitPart(0, legTopY), 0, 0);
+        cx.clearRect(0, 0, Math.round(385 * cs), H);
+        cx.clearRect(Math.round(465 * cs), 0, W, H);
+        cx.clearRect(0, 0, W, Math.round(588 * cs));
+        cx.clearRect(0, Math.round(630 * cs), W, H);
+      }
       D(sx, 'stand', 0, 0, W, H, i, it => !it.whole && (it.stiff || (covers(it) && !it.hangs && !it.blows)));
       // A dress (or other hanging garment) that covers the chest: its top half
       // goes over the chest like a top, its skirt still hangs / blows.
@@ -349,7 +379,7 @@
     try {
       const partImgs = face ? Object.assign({}, pet.partImgs, { head: pet.faceImgs[face] }) : pet.partImgs;
       pet.body.buildArt(partImgs, cloth, cs, hang, over, under, blow,
-        isFinite(blowFrom) ? blowFrom : null, stiff, { arm_L: armL, arm_R: armR, armArt: !!pet.body.armsLocked, leg_L: legL, leg_R: legR, legTop }, back, overTop);
+        isFinite(blowFrom) ? blowFrom : null, stiff, { arm_L: armL, arm_R: armR, hideLegs: hideLegs, collar: hideLegs ? collar : null, armArt: !!pet.body.armsLocked, leg_L: legL, leg_R: legR, legTop }, back, overTop);
     } catch (err) {
       // Reading the pictures' pixels is refused when the game is opened as a
       // file:// page (serve it over http, e.g. GitHub Pages). Keep the sprite.

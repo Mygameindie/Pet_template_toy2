@@ -15,7 +15,8 @@ game_config.js    PER-GAME — how many characters, their positions,
 outfit_config.js  PER-GAME — each character's wardrobe (clothes lists).
 outfit_presets.js PER-GAME — saved outfit "looks" (data only; the
                   Outfits button UI lives in engine/outfit_presets_ui.js).
-feed_items.json   PER-GAME — foods.
+feed_items.json   PER-GAME — foods (the starting bag of each food is
+                  GAME_CONFIG.startInventory in game_config.js).
 garden_items.json PER-GAME — garden plants.
 toys.json         PER-GAME — toys. A toy id ending in a number (toy_1)
                   only works on that character; an id without a number
@@ -63,7 +64,7 @@ a full set keeps its normal sprite. Turn it off with `ragdoll: false` in
   garment moves with which body part.
 - `engine/ragdoll.js` — the physics and the code that cuts the clothes up.
 - Drawing parts: `sprite_template/README.md`. Drawing clothes:
-  `clothing_template/README.md` (incl. the `hangs` / `blows` / `stiff` flags
+  `clothing_template/README.md` (incl. the `hangs` / `blows` / `stiff` / `suit` flags
   and the optional `_over`, `_under`, `_arm_L`, `_arm_R` pictures).
 - The other modes draw `base.png`. It is the parts stacked in the standing
   pose, so keep it in sync when you redraw a part.

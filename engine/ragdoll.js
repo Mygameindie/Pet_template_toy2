@@ -807,7 +807,7 @@
           art.x.restore();
         };
         if (part.carry && part.carryBelow && bodyImg) putCarry();
-        art.x.drawImage(img, 0, 0, CW, CH);
+        if (!(part.drop && armCloth && armCloth.hideLegs)) art.x.drawImage(img, 0, 0, CW, CH);
         if (part.unline) unline(art.x, part.unline);
         if (part.rest) {
           const skin = skinOf(art.x);
@@ -1012,7 +1012,7 @@
         c.getContext('2d').drawImage(r.c, -b.x0, -b.y0);
         const pv = CFG.particles[def.pivot], ch = CFG.particles[def.child];
         const sleeve = {
-          id: id + '_cloth', pivot: def.pivot, child: def.child, canvas: c,
+          id: id + '_cloth', pivot: def.pivot, child: def.child, canvas: c, lift: def.lift,   // lift: the sleeve rides up with its arm
           ox: pv.x * cs - b.x0, oy: pv.y * cs - b.y0,
           restAngle: Math.atan2(ch.y - pv.y, ch.x - pv.x),
         };
@@ -1045,6 +1045,23 @@
         // the top's own picture lies over the sleeve root; without one, last.
         const topAt = out.findIndex(o => o.id === 'body_over');
         if (topAt >= 0) out.splice(topAt, 0, sleeve); else out.push(sleeve);
+      }
+      // The collar of a suit, over the neck (see buildArt's caller): rides with the chest.
+      if (armCloth && armCloth.collar) {
+        const r = mkRead(CW, CH);
+        r.x.drawImage(armCloth.collar, 0, 0);
+        const b = bboxOf(r.x);
+        if (b) {
+          const c = mk(b.x1 - b.x0, b.y1 - b.y0);
+          c.getContext('2d').drawImage(r.c, -b.x0, -b.y0);
+          const pv = CFG.particles.N, ch = CFG.particles.P;
+          const ox = pv.x * cs - b.x0, oy = pv.y * cs - b.y0;
+          out.push({
+            id: 'collar', pivot: 'N', child: 'P', canvas: c,
+            ox, oy, restAngle: Math.atan2(ch.y - pv.y, ch.x - pv.x),
+            mesh: chestParts.length ? chestMesh(c, ox, oy) : null,
+          });
+        }
       }
       // Back pieces of clothes: behind the legs and body, turned with the torso.
       if (back) {

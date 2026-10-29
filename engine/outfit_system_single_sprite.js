@@ -15,7 +15,7 @@
 //   top1 also puts on the matching bottom1 (and vice versa).
 // - Once you're already wearing separates, they are independent: changing one
 //   does NOT change the other, so you can mix freely (top1 + bottom2).
-// - Dress clears top + bottom; top or bottom clears dress.
+// - Dress or bodysuit clears top + bottom (and each other); top or bottom clears both.
 (() => {
   const DEFAULT_COLOR = "Original";
   const COLORS = {
@@ -113,6 +113,7 @@
       stiff: entry.stiff,
       whole: entry.whole,
       cuffs: entry.cuffs,
+      suit: entry.suit,
       blows: entry.blows,
     };
   }
@@ -150,7 +151,7 @@
     : FALLBACK_CONFIG;
 
   const cats = cfg.categories.map(c => ({
-    key: c.key, label: c.label || c.key, z: Number(c.z) || 100, behind: !!c.behind, hangs: !!c.hangs, blows: c.blows,
+    key: c.key, label: c.label || c.key, z: Number(c.z) || 100, behind: !!c.behind, hangs: !!c.hangs, suit: !!c.suit, blows: c.blows,
   }));
 
   // Every pet shares the same dress-up system. Pet count comes from
@@ -184,6 +185,7 @@
             blows: it.blows === undefined ? c.blows : it.blows,
             whole: !!it.whole,
             cuffs: !!it.cuffs,
+            suit: it.suit === undefined ? !!c.suit : !!it.suit,
           };
         });
       });

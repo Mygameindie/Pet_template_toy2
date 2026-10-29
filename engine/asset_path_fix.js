@@ -92,7 +92,7 @@
     const m = POSE.exec(failed);
     const core = m ? m[1].split('_').filter(t => t !== '2').join('_') : '';
     const two = fb === 'base_2.png';
-    const headUrl = IMAGE_DIR + 'parts/' + (m ? (HEAD_FILE[core] || 'head_' + core) : 'head') + (two ? '_2' : '') + '.png';
+    const headUrl = IMAGE_DIR + 'parts/' + (m && core ? (HEAD_FILE[core] || 'head_' + core) : 'head') + (two ? '_2' : '') + '.png';
     const key = fb + '+' + headUrl;
     if (composed.has(key)) return cb(composed.get(key));
     const body = new Image(), head = new Image();
