@@ -16,6 +16,11 @@
 // posesFromHeads: true = there are no whole-body pictures (base.png,
 //   base_sick.png, base_happy.png ...). Every pose is the body built from
 //   images/parts/ plus that pose's head (head_sick.png, head_happy.png ...).
+//
+// startInventory (optional): how many of each food are in the bag at the
+//   start, e.g. { jelly: 2, fish: 3 }. Same keys as feed_items.json and
+//   garden_items.json; a food with no entry starts at 0. Leave it out for
+//   the default gummy-bear bag.
 // ===========================================================
 window.GAME_CONFIG = {
   saveKey: "purelilypet_save",

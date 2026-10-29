@@ -44,6 +44,11 @@ Tips:
   `outfit_config.js` (`{ id: "top1", stiff: true }`) and it stays whole on the body,
   over the chest. The chest doesn't bounce under it. Its sleeves (anything in the blue arm
   areas) still move with the arms, so draw a top and its sleeves together in one file.
+- **Suits (bodysuits).** A garment that covers the body and the whole legs in one picture (a
+  bodysuit with shoes). Mark it `suit: true` (`{ id: "bodysuit1", suit: true }`, or on the whole
+  category: `{ key: "bodysuit", ..., suit: true }`). Above the legs it stays whole on the body
+  like a stiff top; from the legs down it is cut along the legs like pants, and the pet's bare
+  legs are hidden under it instead of poking out beside it.
 - **Whole garments (bras).** Anything outside the pink circles that lies in an arm or head area
   (a strap over the shoulder, a wide cup) moves with that arm or head, so a bra could come apart
   and stick to an arm. Mark it `whole: true` (`{ id: "topunderwear1", whole: true }`) and the
