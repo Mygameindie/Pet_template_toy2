@@ -32,7 +32,7 @@
   function _selectPetAt(e) {
     const p = _getPointerPos(e);
     // Check top-most first (later pets are drawn after earlier ones)
-    for (let i = NUM_PETS - 1; i >= 0; i--) {
+    for (const i of window.PET_FRONT_FIRST) {
       const t = _lastFits[i];
       if (!t) continue;
       if (p.x >= t.x && p.x <= t.x + t.w && p.y >= t.y && p.y <= t.y + t.h) {
@@ -93,7 +93,7 @@
   function loop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    for (let i = 0; i < NUM_PETS; i++) {
+    for (const i of window.PET_DRAW_ORDER) {
       // Each pet can have its own frames; if a pet's frames are missing, fallback to pet1.
       let img = petImgs[i].current;
       if (!_imgOk(img)) img = petImgs[0].current;

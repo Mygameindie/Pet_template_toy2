@@ -564,7 +564,7 @@
       x: getCanvasW() * (n === 1 ? 0.5 : 0.22 + 0.56 * (idx / (n - 1))) - petW / 2,
       idx,
       filter: 'none',
-    })).forEach(({ x, idx, filter }) => {
+    })).sort((a, b) => window.PET_DRAW_ORDER.indexOf(a.idx) - window.PET_DRAW_ORDER.indexOf(b.idx)).forEach(({ x, idx, filter }) => {
       let img = petImgs[idx];
       let useFilter = filter;
 

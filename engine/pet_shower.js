@@ -232,7 +232,7 @@
     }
 
     // 2) heads middle (both pets)
-    for (let i = 0; i < baths.length; i++) {
+    for (const i of window.PET_DRAW_ORDER) {
       drawHead(i, baths[i].currentHeadKey);
     }
 

@@ -336,8 +336,8 @@
   }
 
   function drawPets() {
-    for (const pet of pets) {
-      const i = pet.idx;
+    for (const i of window.PET_DRAW_ORDER) {
+      const pet = pets[i];
       const state = getPetState(pet);
 
       let set = headSets[i];

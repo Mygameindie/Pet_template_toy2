@@ -366,7 +366,8 @@
   }
 
   function drawPet() {
-    pets.forEach((pet, i) => {
+    window.PET_DRAW_ORDER.forEach(i => {
+      const pet = pets[i];
       const x = pet.x - pet.w / 2;
       const y = pet.y - pet.h / 2;
 

@@ -392,7 +392,7 @@
   }
 
   function getTargetPet(p, nearMode = false) {
-    for (let i = pets.length - 1; i >= 0; i--) {
+    for (const i of window.PET_FRONT_FIRST) {
       if (nearMode ? isNearPet(p, pets[i], i) : isOpaqueHit(p, pets[i], i)) return i;
     }
     return -1;
@@ -579,7 +579,7 @@
 
     const now = Date.now();
     updateWind(now);
-    for (let i = 0; i < pets.length; i++) {
+    for (const i of window.PET_DRAW_ORDER) {
       const pet = pets[i];
       const recoil = (pet.recoilUntil && now < pet.recoilUntil) ? 10 : 0;
       const wantHurt = (pet.hurtUntil && now < pet.hurtUntil);

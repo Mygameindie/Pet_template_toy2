@@ -1327,6 +1327,7 @@
 
   window.setActivePet = function (petIndex) {
     window.activePetIndex = PETS.includes(petIndex) ? petIndex : 0;
+    if (typeof window.bringPetToFront === "function") window.bringPetToFront(window.activePetIndex);
     validateSelections();
     renderPanel();
     updateButtonLabel();

@@ -173,7 +173,7 @@
   // === Drag Start (PET) ===
   function startDragPet(e) {
     const p = getPos(baseCanvas, e);
-    for (let i = pets.length - 1; i >= 0; i--) {
+    for (const i of window.PET_FRONT_FIRST) {
       const pet = pets[i];
       if (
         pet.visible &&
@@ -399,7 +399,7 @@
 
   function drawPetsInBed() {
     // Draw sleeping pets at their positions inside the bed
-    for (let i = 0; i < NUM_PETS; i++) {
+    for (const i of window.PET_DRAW_ORDER) {
       if (!bed.petsInBed[i]) continue;
 
       const px = petBedX(i);
@@ -430,7 +430,8 @@
   }
 
   function drawFreePets() {
-    pets.forEach((pet, i) => {
+    window.PET_DRAW_ORDER.forEach(i => {
+      const pet = pets[i];
       if (!pet.visible) return;
 
       const state = pet.dragging ? "fly0" : vy[i] > 2 ? "fall" : "stand";

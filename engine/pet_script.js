@@ -469,7 +469,7 @@
   const p = getPos(e);
 
   // Pick top-most pet under pointer
-  for (let i = pets.length - 1; i >= 0; i--) {
+  for (const i of window.PET_FRONT_FIRST) {
     const pet = pets[i];
     if (hitPet(pet, i, p)) {
       pet.dragging = true;
@@ -779,7 +779,8 @@
   }
 
   function drawPet() {
-    pets.forEach((pet, i) => {
+    window.PET_DRAW_ORDER.forEach(i => {
+      const pet = pets[i];
       const state = getState(pet);
 
       // choose base set

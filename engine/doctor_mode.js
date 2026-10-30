@@ -333,9 +333,9 @@
     update();
     drawGround();
 
-    for (const pet of pets) {
-      drawPet(pet);
-      drawHint(pet);
+    for (const i of window.PET_DRAW_ORDER) {
+      drawPet(pets[i]);
+      drawHint(pets[i]);
     }
 
     drawMedicine();

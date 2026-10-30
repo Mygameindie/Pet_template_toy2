@@ -12,6 +12,9 @@
 //   xFrac     : horizontal start position, 0..1 of screen width.
 //   drawFilter: CSS filter used when this pet falls back to
 //               pet 1's art ("none" for no tint).
+//   z         : (optional) stacking order, higher = in front of the others.
+//               Default: later in this list = in front. Here the girl is
+//               in front of the boy.
 //
 // posesFromHeads: true = there are no whole-body pictures (base.png,
 //   base_sick.png, base_happy.png ...). Every pose is the body built from
@@ -20,8 +23,11 @@
 window.GAME_CONFIG = {
   saveKey: "purelilypet_save",
   posesFromHeads: false,
+  // true = the character you pick comes in front of the other one (z below is
+  // only the starting order). false = z is a fixed stacking order.
+  focusToFront: true,
   pets: [
-    { artSuffix: "",   xFrac: 0.35, drawFilter: "none" },
-    { artSuffix: "_2", xFrac: 0.65, drawFilter: "hue-rotate(140deg) saturate(1.2)" },
+    { artSuffix: "",   xFrac: 0.35, drawFilter: "none", z: 2 },
+    { artSuffix: "_2", xFrac: 0.65, drawFilter: "hue-rotate(140deg) saturate(1.2)", z: 1 },
   ],
 };
