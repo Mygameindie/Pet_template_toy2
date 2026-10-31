@@ -351,20 +351,40 @@
         cx.clearRect(0, 0, W, Math.round(588 * cs));
         cx.clearRect(0, Math.round(630 * cs), W, H);
       }
-      D(sx, 'stand', 0, 0, W, H, i, it => !it.whole && (it.stiff || (covers(it) && !it.hangs && !it.blows)));
       // A dress (or other hanging garment) that covers the chest: its top half
       // goes over the chest like a top, its skirt still hangs / blows.
       const tops = sized(), tx = tops.getContext('2d');
-      let topLine = Infinity;
+      let topLine = Infinity, topZ = -Infinity;
       D(tx, 'stand', 0, 0, W, H, i, it => {
         if (!covers(it) || !(it.hangs || it.blows)) return false;
         const cut = typeof it.blows === 'number' ? it.blows : RCFG.particles.HipL.y;
         topLine = Math.min(topLine, cut);
+        topZ = Math.max(topZ, it.z || 0);
         return true;
       });
+      // The tops go in by z: under that top half, then the top half, then what is
+      // worn over it (a jacket over a dress).
+      const stiffTop = it => !it.whole && (it.stiff || (covers(it) && !it.hangs && !it.blows));
+      D(sx, 'stand', 0, 0, W, H, i, it => stiffTop(it) && !(isFinite(topLine) && it.z > topZ));
       if (isFinite(topLine)) {
         tx.clearRect(0, Math.round(topLine * cs), W, H);
         sx.drawImage(tops, 0, 0);
+        D(sx, 'stand', 0, 0, W, H, i, it => stiffTop(it) && it.z > topZ);
+      }
+      // A dress's own _over picture (its bust pieces) is drawn above all the tops;
+      // what is worn over the dress (a jacket) is drawn again over it.
+      let overZ = Infinity;
+      Object.keys(window.selectedClothes[i] || {}).forEach(k => {
+        const cat = (window.dressUpCatalog[i] || window.dressUpCatalog[0] || {})[k];
+        const it = cat && cat.items && cat.items[window.selectedClothes[i][k]];
+        if (it && ownsTop(it) && (it.hangs || it.blows) && legPic(it.over)) overZ = Math.min(overZ, it.z || 0);
+      });
+      if (isFinite(overZ)) {
+        const hi = sized(), hx = hi.getContext('2d');
+        D(hx, 'stand', 0, 0, W, H, i, it => stiffTop(it) && it.z > overZ);
+        hx.globalCompositeOperation = 'destination-in';
+        hx.drawImage(overTop, 0, 0);
+        overTop.getContext('2d').drawImage(hi, 0, 0);
       }
       D(under.getContext('2d'), 'stand', 0, 0, W, H, i, null, 'under');
       D(armL.getContext('2d'), 'stand', 0, 0, W, H, i, it => !it.cuffs, 'armL');
