@@ -76,7 +76,7 @@
   function partsBody(two, cb) {
     const cfg = window.RAGDOLL_CONFIG;
     const names = ((cfg && cfg.parts) || []).map(q => q.file).filter(n => n !== 'head');
-    const list = names.length ? names : ['back_hair', 'wing_L', 'wing_R', 'back_tail', 'leg_L', 'leg_R', 'arm_L', 'arm_R', 'body', 'chest_L', 'chest_R'];
+    const list = names.length ? names : ['back_hair', 'wing_L', 'wing_R', ((window.GAME_CONFIG && window.GAME_CONFIG.tailFile) || 'back_tail'), 'leg_L', 'leg_R', 'arm_L', 'arm_R', 'body', 'chest_L', 'chest_R'];
     const imgs = {};
     let left = list.length;
     const done = () => { if (--left === 0) cb(list.map(n => imgs[n]).filter(Boolean), !!imgs.body); };
@@ -92,7 +92,9 @@
     const m = POSE.exec(failed);
     const core = m ? m[1].split('_').filter(t => t !== '2').join('_') : '';
     const two = fb === 'base_2.png';
-    const headUrl = IMAGE_DIR + 'parts/' + (m ? (HEAD_FILE[core] || 'head_' + core) : 'head') + (two ? '_2' : '') + '.png';
+    const headUrl = IMAGE_DIR + 'parts/' + (m && core ? (HEAD_FILE[core] || 'head_' + core) : 'head') + (two ? '_2' : '') + '.png';
+    // A pose head that isn't drawn yet (head_sick_2.png ...) shows the character's normal head.
+    const normalHeadUrl = IMAGE_DIR + 'parts/head' + (two ? '_2' : '') + '.png';
     const key = fb + '+' + headUrl;
     if (composed.has(key)) return cb(composed.get(key));
     const body = new Image(), head = new Image();
@@ -119,7 +121,11 @@
     };
     body.onload = done; head.onload = done;
     body.onerror = () => { bodyOk = false; done(); };
-    head.onerror = () => { headOk = false; done(); };
+    head.onerror = () => {
+      if (head.__normal || headUrl === normalHeadUrl) { headOk = false; done(); return; }
+      head.__normal = true;
+      desc.set.call(head, normalHeadUrl);
+    };
     if (!FROM_HEADS) desc.set.call(body, IMAGE_DIR + fb);
     desc.set.call(head, headUrl);
   }

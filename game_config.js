@@ -15,6 +15,11 @@
 //   z         : (optional) stacking order, higher = in front of the others.
 //               Default: later in this list = in front. Here the girl is
 //               in front of the boy.
+//   noParts   : (optional) ragdoll part names this character never has
+//               (e.g. ["chest_L", "chest_R"]); they are not drawn at all.
+//
+// tailFile: (optional) name of the tail picture in images/parts/
+//   (default "back_tail" -> back_tail.png, back_tail_2.png).
 //
 // posesFromHeads: true = there are no whole-body pictures (base.png,
 //   base_sick.png, base_happy.png ...). Every pose is the body built from

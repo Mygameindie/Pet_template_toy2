@@ -39,16 +39,19 @@
   const BLOW_BAND = 14;            // source px of a skirt's top (its waistband) that stays put when it blows
   const SKIRT_FROM = 250;          // px/s (default size) falling before the skirt starts to lift
   const SKIRT_FULL = 1400;         // px/s at which it is blown right up
-  const SKIRT_WIDEN = 0.7;         // how much wider it billows, fully blown
-  const SKIRT_FOLD = 0.7;          // how much shorter (lifted up toward the hips) it gets, fully blown
-  const LEG_FOLLOW = 1;             // how much of a leg's swing a skirt's hem takes (0..1)
+  const SKIRT_WIDEN = 0.7;         // how much wider it billows, fully blown (a skirt without a mesh)
+  const SKIRT_FOLD = 0.55;         // how much shorter its front gets, fully blown (lifted toward the hips)
+  const SKIRT_OPEN = 0.75;         // radians its sides swing up and out, fully blown (an umbrella opening)
+  const LEG_FOLLOW = 0.7;          // how much of a leg's swing a skirt's hem takes (0..1)
   const MESH_CELLS = 7;            // cells across the longer side of a bending layer's mesh (the bend is smooth,
                                    // so a coarse mesh looks the same and draws far fewer triangles)
+  const FINE_CELLS = 10;           // the same for cloth (skirts, the bodice): its outline bends, and a
+                                   // coarse mesh shows that as a jagged edge
   const HEM_K = 0.14;              // how hard a skirt's hem is pulled toward where it hangs (per step)
   const HEM_DAMP = 0.78;           // share of the hem's swing kept per step
   const HEM_INERTIA = 0.0035;      // how much the hem lags when the hips are pushed sideways
   const HEM_DRAPE = 0.45;          // how far the hem swings toward the floor when the body tilts
-  const HEM_MAX = 1.2;             // radians the hem may swing either way
+  const HEM_MAX = 0.8;             // radians the hem may swing either way
   const HELD_SWING_MAX = 1200;    // px/s (at the default pet size) a held body may move round the held point
   const HELD_STILL_STEPS = 30;    // steps (half a second) without the box moving before that kicks in
 
@@ -725,10 +728,10 @@
       // drawMesh). Only the grid cells with something in them are kept.
       // c: the layer's canvas, (ox, oy): its pivot inside it, weigh(ax, ay) gets
       // a point in source px and returns its weights.
-      const meshOf = (c, ox, oy, pivot, weigh) => {
+      const meshOf = (c, ox, oy, pivot, weigh, n = MESH_CELLS) => {
         const W = c.width, H = c.height;
         const d = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
-        const G = Math.max(8, Math.ceil(Math.max(W, H) / MESH_CELLS));
+        const G = Math.max(8, Math.ceil(Math.max(W, H) / n));
         const nx = Math.ceil(W / G), ny = Math.ceil(H / G);
         const pv = CFG.particles[pivot];
         const pts = [];
@@ -752,28 +755,37 @@
         }
         return { nx, pts, cells };
       };
-      // Skirt-like layers: the waistband stays on the body and, further down,
-      // each side swings with its hem (the middle with both, halfway).
-      const legMesh = (c, ox, oy, topY, botY) => meshOf(c, ox, oy, 'P', (ax, ay) => {
-        const t = Math.max(0, Math.min(1, (ay - topY) / Math.max(1, botY - topY)));
-        const f = Math.pow(t, 1.2);
-        const u = (ax - CFG.particles.P.x) / 60;            // -1 left leg .. +1 right leg
-        const left = Math.max(0, Math.min(1, 0.5 - 0.5 * u));
-        return { wl: f * left, wr: f * (1 - left) };
-      });
+      // Skirt-like layers hang from the middle of their waistband: t is how far
+      // down a point is (0 waist .. 1 hem), side how far across (-1 left edge
+      // .. +1 right edge). The waistband stays on the body; further down the
+      // cloth swings and blows more and more (see drawMesh).
+      const legMesh = (c, ox, oy, x0, topY, x1, botY) => {
+        const cx = CFG.particles.P.x, half = Math.max(1, cx - x0, x1 - cx);
+        const m = meshOf(c, ox, oy, 'P', (ax, ay) => ({
+          t: Math.max(0, Math.min(1, (ay - topY) / Math.max(1, botY - topY))),
+          side: Math.max(-1, Math.min(1, (ax - cx) / half)),
+        }), FINE_CELLS);
+        m.waist = topY - CFG.particles.P.y;               // the waistband, source px below the pivot
+        return m;
+      };
       // The over-the-chest layer: fully on the chest inside its circle, fading
       // out to nothing toward the shoulders and the belly, so a top or a bra
       // stretches with the bounce instead of tearing.
       const chestParts = CFG.parts.filter(p => p.offset && p.region && p.region.t === 'ellipse' && imgs[p.file]);
+      // Above the top of the chest (the neckline, the tops of the shoulders) it
+      // doesn't bounce at all, so a collar stays round the neck.
       const chestMesh = (c, ox, oy) => meshOf(c, ox, oy, 'N', (ax, ay) => {
         const wt = {};
         for (const q of chestParts) {
           const r = q.region;
           const e = Math.hypot((ax - r.cx) / r.rx, (ay - r.cy) / r.ry);
-          wt[q.offset] = e <= 0.75 ? 1 : e >= 1.8 ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * (e - 0.75) / 1.05);
+          const n0 = r.cy - r.ry + 10, n1 = r.cy - r.ry * 0.25;
+          const nt = Math.max(0, Math.min(1, (ay - n0) / (n1 - n0)));
+          const neck = nt * nt * (3 - 2 * nt);
+          wt[q.offset] = neck * (e <= 0.75 ? 1 : e >= 1.8 ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * (e - 0.75) / 1.05));
         }
         return { wc: wt };
-      });
+      }, FINE_CELLS);
       // The blowing part of a skirt: its pixels below the waistband line.
       let blowMask = null, blowY = 0;
       if (blow && cloth) {
@@ -936,7 +948,7 @@
           out.splice(at, 0, {
             id: 'skirt', pivot: 'P', child: 'N', canvas: c, flare: blowY / cs,
             ox, oy, restAngle: Math.atan2(ch.y - pv.y, ch.x - pv.x),
-            mesh: legMesh(c, ox, oy, bx.y0 / cs, bx.y1 / cs),
+            mesh: legMesh(c, ox, oy, bx.x0 / cs, bx.y0 / cs, bx.x1 / cs, bx.y1 / cs),
           });
         }
       }
@@ -953,7 +965,7 @@
           out.splice(out.findIndex(o => o.id === 'body') + 1, 0, {
             id: 'hang', pivot: 'P', child: 'N', canvas: c,
             ox, oy, restAngle: Math.atan2(ch.y - pv.y, ch.x - pv.x),
-            mesh: legMesh(c, ox, oy, hb.y0 / cs, hb.y1 / cs),
+            mesh: legMesh(c, ox, oy, hb.x0 / cs, hb.y0 / cs, hb.x1 / cs, hb.y1 / cs),
           });
         }
       }
@@ -1121,7 +1133,7 @@
         ctx.save();
         ctx.translate(ax - originX, ay - originY);
         ctx.rotate(ang);
-        if (part.flare !== undefined && this.skirtLift > 0.002) {
+        if (part.flare !== undefined && !part.mesh && this.skirtLift > 0.002) {
           // The skirt blown up by the air while falling: it billows out
           // sideways and its hem lifts toward the hips, the more the faster
           // it falls.
@@ -1147,7 +1159,11 @@
     // Draw a bending layer through its mesh, in its part's frame (already
     // translated to the pivot and turned by `ang`). Each mesh point moves by:
     //  - the chest's bounce (wc), turned into the part's frame, and/or
-    //  - its side of the skirt's hem swinging about that hip (wl / wr).
+    //  - a skirt's swing (t / side): it turns about the middle of the waistband,
+    //    each side by its own hem's angle and more the lower down it is, so the
+    //    cloth bends like a pendulum instead of pivoting stiffly at the hips;
+    //    and, while it blows (a skirt with `flare`), it opens like an umbrella:
+    //    the sides swing up and out and the front lifts toward the waist.
     // Every cell is drawn as two triangles, each stretched from the picture to
     // where its corners went, so the layer bends smoothly with no gaps.
     // Returns false (draw it flat) when nothing has moved.
@@ -1161,23 +1177,30 @@
         const dx = j.x - t.x, dy = j.y - t.y;
         chest[n] = { x: dx * ca - dy * sa, y: dx * sa + dy * ca };   // screen -> part frame
       }
-      const pv = CFG.particles[part.pivot];
-      const hip = n => ({ x: CFG.particles[n].x - pv.x, y: CFG.particles[n].y - pv.y });
-      const HL = hip('HipL'), HR = hip('HipR');
       const aL = this.hem.L.a, aR = this.hem.R.a;
+      const lift = part.flare !== undefined ? this.skirtLift : 0;
       // Where each point goes, in the part's frame, CSS px.
       let moved = 0;
       const X = new Float32Array(pts.length), Y = new Float32Array(pts.length);
       for (let i = 0; i < pts.length; i++) {
         const q = pts[i];
         let sx = q.sx, sy = q.sy;
-        // Turn about the hips (source px), by each side's share of its hem's swing.
-        const swing = (h, a) => {
-          const c = Math.cos(a), s2 = Math.sin(a), rx = sx - h.x, ry = sy - h.y;
-          sx = h.x + rx * c - ry * s2; sy = h.y + rx * s2 + ry * c;
-        };
-        if (q.wl && aL) swing(HL, aL * q.wl);
-        if (q.wr && aR) swing(HR, aR * q.wr);
+        if (q.t !== undefined && q.t > 0) {
+          // Source px from the middle of the waistband, as a distance and an
+          // angle from straight down (positive toward the right).
+          const dy = sy - M.waist;
+          let rho = Math.hypot(sx, dy), phi = Math.atan2(sx, dy);
+          const left = Math.max(0, Math.min(1, 0.5 - 0.7 * q.side));
+          phi -= (aL * left + aR * (1 - left)) * Math.pow(q.t, 1.3);   // a hem angle turns clockwise
+          if (lift) {
+            const side = Math.abs(q.side), deep = Math.sqrt(q.t);
+            const sm = side * side * (3 - 2 * side);
+            phi += Math.sign(sx) * SKIRT_OPEN * lift * sm * deep;
+            phi = Math.max(-1.9, Math.min(1.9, phi));
+            rho *= 1 - SKIRT_FOLD * lift * (1 - sm) * deep;
+          }
+          sx = rho * Math.sin(phi); sy = M.waist + rho * Math.cos(phi);
+        }
         let x = sx * k, y = sy * k;
         if (q.wc) for (const n in q.wc) { const d = chest[n], w = q.wc[n]; if (d && w) { x += d.x * w; y += d.y * w; } }
         X[i] = x; Y[i] = y;

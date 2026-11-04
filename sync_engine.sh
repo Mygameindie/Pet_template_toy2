@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # ===========================================================
-# 🔄 sync_engine.sh — copy the SHARED ENGINE to the other game
+# 🔄 sync_engine.sh — copy the SHARED ENGINE to another game
 #
-# The engine/ folder must stay identical in every game repo.
-# After you edit anything inside engine/, run this script to
-# copy it to the other game, then commit BOTH repos.
+# The engine/ folder must stay identical in every game of a family.
+# Edit engine/ ONLY in the family's template repo (Pet_template_toy
+# for 1-pet games, Pet_template_toy2 for 2+ pets). Pushing the
+# template runs this script for every game in sync_targets.txt
+# automatically (.github/workflows/sync_engine.yml).
 #
-# Usage (from this repo's folder):
-#   ./sync_engine.sh ../Pet_template_toy2     # or ../Pet_template_toy
+# Manual use (from the template repo's folder), then commit and
+# push the game repo:
+#   ./sync_engine.sh ../Seafairycookiepet     # or ../Devilangelpet
 # ===========================================================
 set -euo pipefail
 
