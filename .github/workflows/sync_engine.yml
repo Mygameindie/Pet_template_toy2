@@ -20,8 +20,9 @@ concurrency:
 
 jobs:
   sync:
-    # Only the default branch is the real engine; work branches don't sync.
-    if: github.ref_name == github.event.repository.default_branch
+    # Only the template itself (not a game made from it with "Use this template"),
+    # and only its default branch; work branches don't sync.
+    if: github.repository == 'Mygameindie/Pet_template_toy2' && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     steps:
       - name: Check out this template
