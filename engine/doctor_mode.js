@@ -2,9 +2,11 @@
 // 🩺 DOCTOR MODE
 // Pets show sick face. Drag the medicine to heal them.
 // ✅ 2 pets
-// ✅ head_sick.png / head_sick_2.png   — sick face (user provides)
-// ✅ head_healed.png / head_healed_2.png — healed face (user provides)
-// ✅ Falls back to head.png if sick/healed images not yet added
+// ✅ Each pose is the standing body built from images/parts/ plus a head:
+//    head_sick.png / head_sick_2.png     — sick face
+//    head_heal.png / head_heal_2.png     — healed face
+//    (asset_path_fix.js builds base_sick.png etc. from them: posesFromHeads)
+// ✅ Falls back to the normal head if a sick/healed head is not yet added
 // ===========================================================
 
 (() => {
@@ -50,9 +52,9 @@
   const imgSets = PET_CFG.map(c => {
     const sfx = c.artSuffix || '';
     return {
-      sick:   loadImg(`head_sick${sfx}.png`),
-      healed: loadImg(`head_healed${sfx}.png`),
-      normal: loadImg(`head${sfx}.png`),
+      sick:   loadImg(`base_sick${sfx}.png`),
+      healed: loadImg(`base_healed${sfx}.png`),
+      normal: loadImg(`base${sfx}.png`),
     };
   });
 
@@ -68,7 +70,7 @@
   // Pet state
   // ==============================
   const PET_H = 450;
-  // Match the main screen: derive width from the head image's real aspect ratio.
+  // Match the main screen: derive width from the pet image's real aspect ratio.
   let PET_W = window.PetArt ? window.PetArt.widthForHeight(PET_H) : 400;
   if (window.PetArt) window.PetArt.onReady(() => { PET_W = window.PetArt.widthForHeight(PET_H); });
 
@@ -290,7 +292,7 @@
     ctx.shadowBlur = 0;
     ctx.font = 'bold 28px sans-serif';
     ctx.textAlign = 'center';
-    ctx.textheadline = 'middle';
+    ctx.textBaseline = 'middle';
     ctx.fillStyle = '#fff';
     ctx.fillText('🎉 All Healed! 🎉', 0, 0);
     ctx.restore();

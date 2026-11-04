@@ -100,7 +100,9 @@
     { id: 'back_hair',  file: 'back_hair',  optional: true, pivot: 'N', child: 'Hr' },
     { id: 'wing_L',    file: 'wing_L',    optional: true, pivot: 'SL', child: 'Wl' },
     { id: 'wing_R',    file: 'wing_R',    optional: true, pivot: 'SR', child: 'Wr' },
-    { id: 'back_tail',  file: 'back_tail',  optional: true, pivot: 'P', child: 'Tt' },
+    // The tail picture's name is per-game: GAME_CONFIG.tailFile in
+    // game_config.js (default 'back_tail' = images/parts/back_tail.png).
+    { id: 'tail',  file: (window.GAME_CONFIG && window.GAME_CONFIG.tailFile) || 'back_tail',  optional: true, pivot: 'P', child: 'Tt' },
     { id: 'leg_L', file: 'leg_L', drop: true, bodyKeeps: LEG_DROP, pivot: 'HipL', child: 'FL', region: { t: 'rect', x0: 0,   y0: 868, x1: 425, y1: SRC_H } },
     { id: 'leg_R', file: 'leg_R', drop: true, bodyKeeps: LEG_DROP, pivot: 'HipR', child: 'FR', region: { t: 'rect', x0: 425, y0: 868, x1: SRC_W, y1: SRC_H } },
     { id: 'arm_L', file: 'arm_L', pivot: 'SL', child: 'HL', region: { t: 'rect', x0: 0,   y0: 606, x1: 346,   y1: 846 } },

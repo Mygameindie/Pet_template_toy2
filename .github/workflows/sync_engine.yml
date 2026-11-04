@@ -1,0 +1,67 @@
+# Copies this template's engine/ to every game in sync_targets.txt.
+# Runs when engine/ (or the shared script / README / target list) changes on
+# the default branch, or by hand: Actions tab -> "Sync engine to games" -> Run.
+# Needs the secret ENGINE_SYNC_TOKEN: a fine-grained GitHub token with
+# Contents: Read and write on every game repo in sync_targets.txt.
+name: Sync engine to games
+
+on:
+  push:
+    paths:
+      - "engine/**"
+      - "sync_engine.sh"
+      - "README.md"
+      - "sync_targets.txt"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-engine
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    # Only the template itself (not a game made from it with "Use this template"),
+    # and only its default branch; work branches don't sync.
+    if: github.repository == 'Mygameindie/Pet_template_toy2' && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this template
+        uses: actions/checkout@v4
+        with:
+          path: template
+
+      - name: Copy engine/ to every game and push
+        env:
+          TOKEN: ${{ secrets.ENGINE_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TOKEN}" ]; then
+            echo "::error::Secret ENGINE_SYNC_TOKEN is missing. See README.md (one-time setup)."
+            exit 1
+          fi
+          git config --global user.name  "engine-sync-bot"
+          git config --global user.email "engine-sync-bot@users.noreply.github.com"
+          SRC_SHA="$(git -C template rev-parse --short HEAD)"
+          failed=0
+          # One owner/repo per line; blank lines and # comments are ignored.
+          while read -r repo; do
+            echo "::group::${repo}"
+            dir="game_${repo//\//_}"
+            if ! git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${repo}.git" "$dir"; then
+              echo "::error::Could not clone ${repo} (does the token have access to it?)"
+              echo "::endgroup::"; failed=1; continue
+            fi
+            ./template/sync_engine.sh "$dir"
+            cd "$dir"
+            git add -A engine sync_engine.sh README.md
+            if git diff --cached --quiet; then
+              echo "${repo}: already up to date"
+            else
+              git commit -m "Sync engine from ${GITHUB_REPOSITORY}@${SRC_SHA}"
+              git push origin HEAD
+              echo "${repo}: engine updated"
+            fi
+            cd ..
+            echo "::endgroup::"
+          done < <(grep -vE '^\s*(#|$)' template/sync_targets.txt | tr -d '\r')
+          exit $failed

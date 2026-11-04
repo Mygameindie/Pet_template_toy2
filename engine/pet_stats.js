@@ -59,7 +59,11 @@
   }
 
   // --- Garden inventory (bag linked to feed mode) ---
+  // Per-game starting bag: GAME_CONFIG.startInventory (same keys as
+  // feed_items.json and garden_items.json; a food with no entry counts as 0
+  // and its Feed button stays greyed out).
   function defaultInventory() {
+    if (GAME.startInventory) return { ...GAME.startInventory };
     return {
       jelly: 2, bittergummybear: 2, pinkgummybear: 2,
       yellowgummybear: 2, icegummybear: 2, giantgummybear: 2, rainbowgummybear: 2,
@@ -395,7 +399,7 @@
           if (!img._plainHead) return paint(null);
           const cfg = window.RAGDOLL_CONFIG;
           const names = ((cfg && cfg.parts) || []).map(q => q.file).filter(n => n !== 'head');
-          const list = names.length ? names : ['back_hair', 'wing_L', 'wing_R', 'back_tail', 'leg_L', 'leg_R', 'arm_L', 'arm_R', 'body', 'chest_L', 'chest_R'];
+          const list = names.length ? names : ['back_hair', 'wing_L', 'wing_R', ((window.GAME_CONFIG && window.GAME_CONFIG.tailFile) || 'back_tail'), 'leg_L', 'leg_R', 'arm_L', 'arm_R', 'body', 'chest_L', 'chest_R'];
           const got = {};
           let left = list.length;
           const done = () => { if (--left === 0) paint(list.map(n => got[n]).filter(Boolean)); };

@@ -127,17 +127,36 @@
     };
   }
 
+  // Which half of the picture a sleeve is drawn on ("L" = the arm on the left
+  // of the canvas, the ragdoll's arm_L), or null if it can't be read (file://).
+  function sideOf(im) {
+    try {
+      const w = im.naturalWidth, h = im.naturalHeight;
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      const x = c.getContext("2d", { willReadFrequently: true });
+      x.drawImage(im, 0, 0);
+      const d = x.getImageData(0, 0, w, h).data;
+      let sum = 0, n = 0;
+      for (let i = 3; i < d.length; i += 16) if (d[i] > 6) { sum += ((i >> 2) % w); n++; }
+      return n ? (sum / n < w / 2 ? "L" : "R") : null;
+    } catch (e) { return null; }
+  }
+
   // The optional extra pictures of a garment (<name>_over / _under / _arm_L /
   // _arm_R / _L / _R; the last two are the ragdoll's own left / right leg pictures). Only asked for once the garment's own picture has loaded, so
   // clothes that don't exist don't cost four failed requests each.
+  // Character 2's extras may also put the "_2" last (jacket1_arm_L_2.png as
+  // well as jacket1_2_arm_L.png): tried when the first name isn't there.
   function extraLayers(prefix) {
     const main = new Image();
     const names = { over: "_over", under: "_under", armL: "_arm_L", armR: "_arm_R", legL: "_L", legR: "_R" };
+    const pet = /^(.*)(_\d+)$/.exec(prefix);
     const out = {};
     Object.keys(names).forEach(k => {
       const im = new Image();
       im._failed = true;           // nothing to draw until it has really loaded
-      im.onload = () => { im._failed = false; };
+      im.onload = () => { im._failed = false; if (k === "armL" || k === "armR") im._side = sideOf(im); };
+      if (pet) im.onerror = () => { im.onerror = null; im.src = `${pet[1]}${names[k]}${pet[2]}.png`; };
       out[k] = im;
     });
     main.onload = () => Object.keys(names).forEach(k => { out[k].src = `${prefix}${names[k]}.png`; });
@@ -308,6 +327,8 @@
       }
     }
   }
+  // A jacket is not part of these rules: it layers over a top, dress or
+  // bodysuit and is never removed by them.
   function applyDressRules(p, category, id) {
     if (id === 0 || id === "0") return;
     const sc = window.selectedClothes[p];
@@ -427,8 +448,9 @@
     motionLift: 0.07,  // billow when the pet falls
     dressWaist: 0.40,  // a dress with no region: its top 40% stays still
     rows: 24,          // simulated rows per piece
-    meshCols: 48,      // drawn mesh: at most this many columns ...
-    meshRows: 48,      // ... and rows across the skirt
+    meshCols: 16,      // drawn mesh: at most this many columns ... (each cell is a slanted
+                       // patch, so a coarse mesh still bends smoothly and draws far less)
+    meshRows: 12,      // ... and rows across the skirt
     shade: 0.22,       // how dark the folds get (0 = no fold shading)
     cut: 3,            // sleeves/hands touching the skirt by up to ~2x this
                        // many pixels are cut off it (they never move)
@@ -955,35 +977,46 @@
       if (rowL[ri] >= 0) {
         const c0 = clampN(Math.floor(rowL[ri] / cellW) - 1, 0, cols - 1);
         const c1 = clampN(Math.ceil(rowR[ri] / cellW) + 1, 1, cols);
+        // Each cell is drawn as a patch of the picture stretched onto the
+        // slanted four-sided shape its corners went to (not an upright box),
+        // so a curved or flipped-up skirt bends smoothly with no stair steps.
+        // A little overlap hides the seams between neighbouring patches.
+        const OV = 1.5;
+        const cellMap = c => {
+          const ax = ((topX[c + 1] - topX[c]) + (botX[c + 1] - botX[c])) / 2 * s / cellW;
+          const ay = ((topY[c + 1] - topY[c]) + (botY[c + 1] - botY[c])) / 2 * s / cellW;
+          const bx = ((botX[c] - topX[c]) + (botX[c + 1] - topX[c + 1])) / 2 * s / cellH;
+          const by = ((botY[c] - topY[c]) + (botY[c + 1] - topY[c + 1])) / 2 * s / cellH;
+          const mx = ((topX[c] + topX[c + 1] + botX[c] + botX[c + 1]) / 4 - ox) * s;
+          const my = ((topY[c] + topY[c + 1] + botY[c] + botY[c + 1]) / 4 - oy) * s;
+          // Picture px measured from the cell's centre -> canvas px.
+          cx.setTransform(ax, ay, bx, by, mx, my);
+        };
         for (let c = c0; c < c1; c++) {
-          const dx0 = ((topX[c] + botX[c]) / 2 - ox) * s;
-          const dx1 = ((topX[c + 1] + botX[c + 1]) / 2 - ox) * s;
-          const dy0 = ((topY[c] + topY[c + 1]) / 2 - oy) * s;
-          const dy1 = ((botY[c] + botY[c + 1]) / 2 - oy) * s;
-          const lx = Math.min(dx0, dx1), dw = Math.abs(dx1 - dx0) + 1.2, dh = dy1 - dy0 + (dy1 < dy0 ? -1 : 1);
-          cx.drawImage(L.moving, c * cellW, r * cellH, cellW, cellH, lx, dy0, dw, dh);
+          cellMap(c);
+          cx.drawImage(L.moving, c * cellW - OV, r * cellH - OV, cellW + OV * 2, cellH + OV * 2,
+            -cellW / 2 - OV, -cellH / 2 - OV, cellW + OV * 2, cellH + OV * 2);
         }
         // Fold light and shade, only where the cloth is waving.
         if (shadeK > 0) {
           cx.globalCompositeOperation = "source-atop";
           for (let c = c0; c < c1; c++) {
-            const dx0 = ((topX[c] + botX[c]) / 2 - ox) * s;
-            const dx1 = ((topX[c + 1] + botX[c + 1]) / 2 - ox) * s;
-            const dy0 = ((topY[c] + topY[c + 1]) / 2 - oy) * s;
-            const dy1 = ((botY[c] + botY[c + 1]) / 2 - oy) * s;
+            const dy0 = (topY[c] + topY[c + 1]) / 2, dy1 = (botY[c] + botY[c + 1]) / 2;
             // Folds turning away are darker; cloth bunched up (rows pushed
             // together as the hem rises) shows its shadowed inside.
-            const bunch = Math.min(1, Math.max(0, 0.85 - (dy1 - dy0) / (cellH * s)) * 1.6);
+            const bunch = Math.min(1, Math.max(0, 0.85 - (dy1 - dy0) / cellH) * 1.6);
             const sl = (topS[c] + topS[c + 1] + botS[c] + botS[c + 1]) / 4 + bunch * 0.3;
             const lvl = Math.min(8, Math.round(Math.abs(sl) * 20));
             if (lvl < 1) continue;
+            cellMap(c);
             cx.globalAlpha = shadeK;
             cx.fillStyle = sl > 0 ? SHADES[lvl - 1] : LIGHTS[lvl - 1];
-            cx.fillRect(Math.min(dx0, dx1), dy0, Math.abs(dx1 - dx0) + 0.8, dy1 - dy0 + 0.8);
+            cx.fillRect(-cellW / 2, -cellH / 2, cellW, cellH);   // no overlap: shade laid twice shows as a grid
           }
           cx.globalAlpha = 1;
           cx.globalCompositeOperation = "source-over";
         }
+        cx.setTransform(1, 0, 0, 1, 0, 0);
       }
       let t = topX; topX = botX; botX = t;
       t = topY; topY = botY; botY = t;
@@ -1271,6 +1304,13 @@
         return safeDraw(ctx, hex ? tintedImage(im, hex) : im, x, y, w, h);
       };
       if (layer) {
+        // A sleeve goes on the arm it is drawn over, whichever name it has
+        // (_arm_L may mean the character's own left, on the right of the picture).
+        if (layer === "armL" || layer === "armR") {
+          const want = layer === "armL" ? "L" : "R";
+          const swap = layer === "armL" ? "armR" : "armL";
+          if (it[layer] && it[layer]._side && it[layer]._side !== want) layer = swap;
+        }
         if (!behind && !catBehind && extra(layer)) drew = true;
         return;
       }

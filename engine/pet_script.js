@@ -180,13 +180,16 @@
     // If the BODY itself is the plain one, the pet is drawn with its drawFilter
     // tint so it still looks like a different character.
     let borrowed = false;
+    const skip = (PET_CFG[i] && PET_CFG[i].noParts) || [];
     RCFG.parts.concat(faces).forEach(part => {
       const im = new Image();
+      const skipped = skip.includes(part.file) && !part.key;
+      if (skipped) setTimeout(() => done(false), 0);
       const plain = 'images/parts/' + (part.file) + '.png';
       let triedPlain = !suffix;
       const done = ok => {
         if (ok) imgs[part.key || part.file] = im;
-        if (!ok && !triedPlain) {
+        if (!ok && !triedPlain && !skipped) {
           triedPlain = true;
           if (part.file === 'body') borrowed = true;
           if (part.key) { im.src = 'images/parts/' + part.name.replace(suffix, '') + '.png'; return; }
@@ -202,6 +205,7 @@
         pet.artSig = null;
         pet.placed = false;
       };
+      if (skipped) return;
       im.onload = () => done(true);
       im.onerror = () => done(false);
       im.src = 'images/parts/' + (part.name || part.file + suffix) + '.png';
