@@ -2,3 +2,4 @@
 # One GitHub repo per line (owner/repo). The engine is copied to each
 # of them automatically when engine/ changes here (sync_engine.yml).
 mygameindie/devilangelpet
+mygameindie/temu
