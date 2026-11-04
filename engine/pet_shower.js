@@ -3,7 +3,7 @@
 // ✅ Pets come from game_config.js
 // ✅ per-pet base: base.png / base_bath2.png (+ artSuffix, e.g. base_2.png / base_2_bath2.png)
 // ✅ LAYER ORDER (ONE BIG POOL covering ALL PETS):
-//    pool2 (bottom, one big) -> heads (middle) -> sponge -> pool1 (top, one big)
+//    pool2 (bottom, one big) -> heads (middle) -> pool1 (top, one big) -> sponge (always visible)
 // ===========================================================
 
 (() => {
@@ -86,8 +86,10 @@
 
   const sponge = {
     img: new Image(),
-    x: 100,
-    y: 100,
+    // Starts clear of the stats panel in the top-left corner (it used to sit under
+    // it, so the sponge could hardly be picked up).
+    x: Math.max(220, canvas.width * 0.7),
+    y: Math.max(120, canvas.height * 0.25),
     width: 100,
     height: 100,
     dragging: false,
@@ -104,7 +106,8 @@
     try {
       splashSound.pause();
       splashSound.currentTime = 0;
-      splashSound.play();
+      const p = splashSound.play();
+      if (p && p.catch) p.catch(() => {});
     } catch {}
   }
 
@@ -165,14 +168,19 @@
   // Hitbox
   // ==============================
 
-  // Wash hitbox expressed as fractions of the drawn base, so it scales with the
-  // pet size (previously tuned in px for a 520x520 base: 120/90/130/150).
+  // Wash hitbox as fractions of the drawn base: the whole pet, so the sponge
+  // washes it wherever it touches.
   const hitbox = {
-    xOffset: 0.231,
-    yOffset: 0.173,
-    width: 0.25,
-    height: 0.288,
+    xOffset: 0,
+    yOffset: 0,
+    width: 1,
+    height: 1,
   };
+
+  // The sponge scrubs while it washes: it rocks side to side and bobs. `scrub`
+  // eases in and out so it settles when the sponge is lifted off the pet.
+  let scrub = 0;
+  let scrubT = 0;
 
   // ==============================
   // Update Loop
@@ -236,11 +244,6 @@
       drawHead(i, baths[i].currentHeadKey);
     }
 
-    // 3) sponge (guard against a broken/missing image — drawImage throws on those)
-    if (sponge.img.complete && sponge.img.naturalWidth > 0) {
-      ctx.drawImage(sponge.img, sponge.x, sponge.y, sponge.width, sponge.height);
-    }
-
     // 4) touching/state update
     for (let i = 0; i < baths.length; i++) {
       const bx = baths[i].x;
@@ -273,6 +276,19 @@
     // 5) pool1 top (ONE big, covers both heads)
     if (poolImgs.top.complete && poolImgs.top.naturalWidth > 0) {
       ctx.drawImage(poolImgs.top, poolX, poolY, poolW, poolH);
+    }
+
+    // 6) sponge on top of everything, so you can always see it scrub
+    if (sponge.img.complete && sponge.img.naturalWidth > 0) {
+      const washing = baths.some(b => b.wasTouching);
+      scrub += ((washing ? 1 : 0) - scrub) * 0.2;
+      if (washing) scrubT += 0.5;
+      const cx = sponge.x + sponge.width / 2, cy = sponge.y + sponge.height / 2;
+      ctx.save();
+      ctx.translate(cx + Math.sin(scrubT) * 14 * scrub, cy + Math.abs(Math.sin(scrubT * 0.5)) * -8 * scrub);
+      ctx.rotate(Math.sin(scrubT) * 0.25 * scrub);
+      ctx.drawImage(sponge.img, -sponge.width / 2, -sponge.height / 2, sponge.width, sponge.height);
+      ctx.restore();
     }
 
     raf = requestAnimationFrame(update);
