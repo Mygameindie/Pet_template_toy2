@@ -33,6 +33,8 @@ window.GAME_CONFIG = {
   focusToFront: true,
   pets: [
     { artSuffix: "",   xFrac: 0.35, drawFilter: "none", z: 2 },
-    { artSuffix: "_2", xFrac: 0.65, drawFilter: "hue-rotate(140deg) saturate(1.2)", z: 1 },
+    // noParts: ragdoll parts this character never has (pet 2 has no chest),
+    // even when pet 1's picture is borrowed because its own is missing.
+    { artSuffix: "_2", xFrac: 0.65, drawFilter: "hue-rotate(140deg) saturate(1.2)", z: 1, noParts: ["chest_L", "chest_R"] },
   ],
 };
