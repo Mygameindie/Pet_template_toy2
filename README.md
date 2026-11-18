@@ -6,7 +6,7 @@ There are two engine families, each with one TEMPLATE repo that owns it:
 | Family | Template (edit the engine HERE) | Games that get its engine |
 |---|---|---|
 | 1 pet | `Pet_template_toy` | `Seafairycookiepet` |
-| 2+ pets | `Pet_template_toy2` | `Devilangelpet` |
+| 2+ pets | `Pet_template_toy2` | `Devilangelpet`, `Temu` |
 
 ```
 engine/           SHARED — identical in every game of the family. Edit it
@@ -41,7 +41,7 @@ index.html        PER-GAME — page title + script list.
    `sync_targets.txt` and pushes it there. Watch it in the template's
    **Actions** tab.
 
-Never edit `engine/` inside a game repo (Seafairycookiepet, Devilangelpet):
+Never edit `engine/` inside a game repo (Seafairycookiepet, Devilangelpet, Temu):
 the next sync from the template overwrites it.
 
 Adding a new game to a family: add its `owner/repo` line to the template's
