@@ -62,7 +62,9 @@ const DRESS1_SKIRT = {
 //    suit: true    its pictures cover the whole legs (a bodysuit with shoes): the pet's
 //                  bare legs are hidden under it instead of poking out beside it.
 //  Optional extra pictures per garment: <name>_over.png (over the chest, e.g.
-//  bra straps), <name>_under.png (under it), <name>_arm_L/_arm_R.png (sleeves).
+//  bra straps), <name>_under.png (under it), <name>_arm_L/_arm_R.png (sleeves,
+//  only if you want them separate: sleeves drawn in the top's or dress's own
+//  picture are found and moved with the arms automatically).
 // ===========================================================
 
 window.OUTFIT_CONFIG = {

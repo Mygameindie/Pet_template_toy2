@@ -90,7 +90,8 @@ a full set keeps its normal sprite. Turn it off with `ragdoll: false` in
 - `engine/ragdoll.js` — the physics and the code that cuts the clothes up.
 - Drawing parts: `sprite_template/README.md`. Drawing clothes:
   `clothing_template/README.md` (incl. the `hangs` / `blows` / `stiff` / `suit` flags
-  and the optional `_over`, `_under`, `_arm_L`, `_arm_R` pictures).
+  and the optional `_over`, `_under`, `_arm_L`, `_arm_R` pictures). Sleeves can be drawn in
+  the same file as the top or dress: the engine finds them and moves them with the arms.
 - The other modes draw `base.png`. It is the parts stacked in the standing
   pose, so keep it in sync when you redraw a part.
 

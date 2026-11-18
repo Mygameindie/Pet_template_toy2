@@ -76,6 +76,40 @@
 
   const wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 
+  // Distance (px, roughly) from every pixel of a W × H grid to the nearest
+  // pixel set in `seed`.
+  function distField(seed, W, H) {
+    const N = W * H, D = new Float32Array(N), R2 = Math.SQRT2;
+    for (let i = 0; i < N; i++) D[i] = seed[i] ? 0 : 1e9;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        let v = D[i];
+        if (x > 0 && D[i - 1] + 1 < v) v = D[i - 1] + 1;
+        if (y > 0) {
+          if (D[i - W] + 1 < v) v = D[i - W] + 1;
+          if (x > 0 && D[i - W - 1] + R2 < v) v = D[i - W - 1] + R2;
+          if (x < W - 1 && D[i - W + 1] + R2 < v) v = D[i - W + 1] + R2;
+        }
+        D[i] = v;
+      }
+    }
+    for (let y = H - 1; y >= 0; y--) {
+      for (let x = W - 1; x >= 0; x--) {
+        const i = y * W + x;
+        let v = D[i];
+        if (x < W - 1 && D[i + 1] + 1 < v) v = D[i + 1] + 1;
+        if (y < H - 1) {
+          if (D[i + W] + 1 < v) v = D[i + W] + 1;
+          if (x < W - 1 && D[i + W + 1] + R2 < v) v = D[i + W + 1] + R2;
+          if (x > 0 && D[i + W - 1] + R2 < v) v = D[i + W - 1] + R2;
+        }
+        D[i] = v;
+      }
+    }
+    return D;
+  }
+
   class Ragdoll {
     constructor() {
       this.k = 1;                          // source px -> screen px
@@ -631,6 +665,109 @@
       }
     }
 
+    // ---- Sleeves ---------------------------------------------------------
+    // Which canvas pixels (source px) belong to each arm's sleeve, worked out
+    // from the part pictures, so a garment can be drawn with its sleeves in one
+    // file. A pixel is the arm's when it lies off the body (outside the body,
+    // chest, head and legs) and is nearer that arm than anything else: a short
+    // puffed sleeve, a long one or a wide bell sleeve hanging below the arm all
+    // follow the arm, while a skirt flaring at the hips or a bust reaching past
+    // the side of the body stays put. `cut` is what leaves the garment; `take`
+    // adds the sleeve's root, the strip of it lying over the shoulder (where
+    // the arm's hidden end is), so no gap opens there when the arm swings.
+    // `far`: the arm's area at least FAR px off the body; a piece of a garment
+    // must reach into it to count as a sleeve.
+    // Per arm { take, cut, far }: one byte per pixel of the 851 × 1134 source.
+    // Built once per set of part pictures; null without the arm and body pictures.
+    sleeveMasks(imgs) {
+      if (!imgs.arm_L || !imgs.arm_R || !imgs.body) return null;
+      const others = ['body', 'chest_L', 'chest_R', 'head', 'leg_L', 'leg_R'];
+      // The head's picture changes with the face, but not its shape.
+      const key = ['arm_L', 'arm_R'].concat(others.filter(n => n !== 'head')).map(n => (imgs[n] && imgs[n].src) || '').join('|');
+      if (this._sleeves && this._sleeves.key === key) return this._sleeves.val;
+      const W = CFG.SRC_W, H = CFG.SRC_H, N = W * H;
+      const ROOT = 18;                     // how far over the shoulder a sleeve's root reaches (source px)
+      // A garment's pixels this close to the body stay on it: where the arm's
+      // outline touches the body's (the armpit), the edge of a bust or a
+      // sleeveless armhole would otherwise be pulled off with the arm.
+      const EDGE = 3;
+      // A piece of a garment only goes with the arm if some of it is at least
+      // this far from the body (source px): a sleeve, a glove or a bracelet,
+      // not the edge of a bodice that is drawn a bit wider than the chest.
+      const FAR = 20;
+      let val = null;
+      try {
+        const c = document.createElement('canvas');
+        c.width = W; c.height = H;
+        const x = c.getContext('2d', { willReadFrequently: true });
+        const solid = names => {
+          const s = new Uint8Array(N);
+          for (const n of names) {
+            if (!imgs[n]) continue;
+            x.clearRect(0, 0, W, H);
+            x.drawImage(imgs[n], 0, 0, W, H);
+            const d = x.getImageData(0, 0, W, H).data;
+            for (let i = 0; i < N; i++) if (d[i * 4 + 3] > 40) s[i] = 1;
+          }
+          return s;
+        };
+        const dist = seed => distField(seed, W, H);
+        const O = solid(others), AL = solid(['arm_L']), AR = solid(['arm_R']);
+        const dO = dist(O), dL = dist(AL), dR = dist(AR);
+        const side = (A, dA, dB) => {
+          const own = new Uint8Array(N);
+          for (let i = 0; i < N; i++) if (dO[i] > EDGE && dA[i] < dB[i] && dA[i] < dO[i]) own[i] = 1;
+          const dOwn = dist(own);
+          const take = own.slice();
+          for (let i = 0; i < N; i++) if (O[i] && A[i] && dOwn[i] <= ROOT) take[i] = 1;
+          const far = own.slice();
+          for (let i = 0; i < N; i++) if (dO[i] <= FAR) far[i] = 0;
+          return { take, cut: own, far };
+        };
+        val = { L: side(AL, dL, dR), R: side(AR, dR, dL), root: ROOT };
+      } catch (err) {
+        val = null;                        // pixels unreadable: the old straight cuts are used
+      }
+      this._sleeves = { key, val };
+      return val;
+    }
+
+    // The sleeve masks at the size the art is built at (cs canvas px per source
+    // px), cropped to each arm's area: { arm_L, arm_R } of { x0, y0, w, h, cut,
+    // far, take }, one byte per canvas px of the crop.
+    sleeveZones(masks, cs) {
+      if (this._zones && this._zones.cs === cs && this._zones.masks === masks) return this._zones.val;
+      const W = CFG.SRC_W, H = CFG.SRC_H;
+      const CW = Math.round(W * cs), CH = Math.round(H * cs);
+      const val = {};
+      for (const id of ['arm_L', 'arm_R']) {
+        const m = masks[id === 'arm_L' ? 'L' : 'R'];
+        let x0 = W, y0 = H, x1 = -1, y1 = -1;
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            if (!m.take[y * W + x]) continue;
+            if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+          }
+        }
+        if (x1 < 0) continue;
+        const bx0 = Math.max(0, Math.floor(x0 * cs) - 1), by0 = Math.max(0, Math.floor(y0 * cs) - 1);
+        const bx1 = Math.min(CW, Math.ceil((x1 + 1) * cs) + 1), by1 = Math.min(CH, Math.ceil((y1 + 1) * cs) + 1);
+        const w = bx1 - bx0, h = by1 - by0, n = w * h;
+        const cut = new Uint8Array(n), far = new Uint8Array(n), take = new Uint8Array(n);
+        for (let y = 0; y < h; y++) {
+          const sy = Math.min(H - 1, Math.floor((y + by0 + 0.5) / cs));
+          for (let x = 0; x < w; x++) {
+            const sx = Math.min(W - 1, Math.floor((x + bx0 + 0.5) / cs));
+            const s = sy * W + sx, i = y * w + x;
+            cut[i] = m.cut[s]; far[i] = m.far[s]; take[i] = m.take[s];
+          }
+        }
+        val[id] = { x0: bx0, y0: by0, w, h, cut, far, take };
+      }
+      this._zones = { cs, masks, val };
+      return val;
+    }
+
     // ---- Art -------------------------------------------------------------
     // imgs: { <file name>: loaded image } for the parts that exist.
     // cloth: a canvas with only the clothes drawn on it (or null), the same
@@ -657,11 +794,104 @@
       const mk = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, w); c.height = Math.max(1, h); return c; };
       const mkRead = (w, h) => { const c = mk(w, h); return { c, x: c.getContext('2d', { willReadFrequently: true }) }; };
 
-      // Sleeves drawn as their own per-arm pictures (<garment>_arm_L/_arm_R.png):
-      // when the worn garments have them, nothing is cut along the arms and the
-      // stiff garments stay whole. Without them the old cuts are used.
+      // Sleeves are found by themselves: whatever part of a garment lies off the
+      // body, nearer the arm than anything else, is that arm's sleeve (see
+      // sleeveMasks). It is lifted out of the garment into its own picture,
+      // which turns with the arm, so a top or dress and its sleeves can be
+      // drawn in ONE file. A garment may still bring its own sleeve pictures
+      // (<garment>_arm_L/_arm_R.png); those are used as they are.
+      const masks = this.sleeveMasks(imgs);
+      if (masks) {
+        armCloth = Object.assign({}, armCloth);
+        const zones = this.sleeveZones(masks, cs);
+        const reach = Math.max(1, Math.round(masks.root * cs));
+        const maskCanvas = (z, bits) => {
+          const c = mk(z.w, z.h), x = c.getContext('2d');
+          const im = x.createImageData(z.w, z.h);
+          for (let i = 0; i < bits.length; i++) if (bits[i]) im.data[i * 4 + 3] = 255;
+          x.putImageData(im, 0, 0);
+          return c;
+        };
+        // Takes each arm's sleeve out of a garment picture (in place) and
+        // returns it, one picture per arm. A sleeve is a piece of the garment in
+        // the arm's area that reaches well off the body (so the edge of a bodice
+        // that only touches the arm stays put). It brings its root along: the
+        // garment over the shoulder joined to it, grown out from the sleeve
+        // through the garment itself, so a sleeveless dress keeps its armholes
+        // and a shoulder strap beside a sleeve stays on the body.
+        // keep: false only cuts the sleeves out (`hang` is just the shape of
+        // what hangs; its sleeves are taken from the drawn pictures).
+        const split = (src, keep = true) => {
+          const got = {}, cuts = [];
+          if (!src) return got;
+          const sx = src.getContext('2d');
+          for (const id in zones) {
+            const z = zones[id], W = z.w, n = W * z.h;
+            // Read through a scratch canvas made for reading (the garment's
+            // own canvas is a drawing one).
+            const r = mkRead(z.w, z.h);
+            r.x.drawImage(src, z.x0, z.y0, z.w, z.h, 0, 0, z.w, z.h);
+            const a = r.x.getImageData(0, 0, z.w, z.h).data;
+            const on = new Uint8Array(n), mine = new Uint8Array(n);
+            for (let i = 0; i < n; i++) if (a[i * 4 + 3] > 20) on[i] = 1;
+            let front = [];
+            for (let i = 0; i < n; i++) if (on[i] && z.far[i]) { mine[i] = 1; front.push(i); }
+            if (!front.length) continue;                       // no sleeve on this side
+            // Spreads `mine` from `front` over the pixels ok() lets in, `steps` px at most.
+            const spread = (ok, steps) => {
+              for (let s = 0; front.length && s < steps; s++) {
+                const next = [];
+                for (const i of front) {
+                  const px = i % W;
+                  if (px > 0 && ok(i - 1)) { mine[i - 1] = 1; next.push(i - 1); }
+                  if (px < W - 1 && ok(i + 1)) { mine[i + 1] = 1; next.push(i + 1); }
+                  if (i >= W && ok(i - W)) { mine[i - W] = 1; next.push(i - W); }
+                  if (i + W < n && ok(i + W)) { mine[i + W] = 1; next.push(i + W); }
+                }
+                front = next;
+              }
+            };
+            spread(j => !mine[j] && on[j] && z.cut[j], Infinity);
+            // What leaves the garment: the sleeve, and the faint pixels round it.
+            const gone = new Uint8Array(n);
+            for (let i = 0; i < n; i++) if (z.cut[i] && (mine[i] || !on[i])) gone[i] = 1;
+            cuts.push([z, maskCanvas(z, gone)]);
+            if (!keep) continue;
+            front = [];
+            for (let i = 0; i < n; i++) if (mine[i]) front.push(i);
+            spread(j => !mine[j] && on[j] && z.take[j] && !z.cut[j], reach);
+            for (let i = 0; i < n; i++) if (gone[i]) mine[i] = 1;
+            const t = mk(CW, CH), tx = t.getContext('2d');
+            tx.drawImage(src, z.x0, z.y0, z.w, z.h, z.x0, z.y0, z.w, z.h);
+            tx.globalCompositeOperation = 'destination-in';
+            tx.drawImage(maskCanvas(z, mine), z.x0, z.y0);
+            got[id] = t;
+          }
+          if (cuts.length) {
+            sx.save();
+            sx.globalCompositeOperation = 'destination-out';
+            for (const [z, c] of cuts) sx.drawImage(c, z.x0, z.y0);
+            sx.restore();
+          }
+          return got;
+        };
+        // Layered like the garments themselves: the tops' and dresses' sleeves,
+        // then the garments' own sleeve pictures (a jacket), then the rest
+        // (gloves, bracelets) on top.
+        const fromTops = [split(stiff), split(blow)];
+        split(hang, false);
+        const fromRest = split(cloth);
+        for (const id of ['arm_L', 'arm_R']) {
+          const parts = fromTops.map(g => g[id]).concat([armCloth[id], fromRest[id]]).filter(Boolean);
+          if (parts.length === 1) { armCloth[id] = parts[0]; continue; }
+          const c = mk(CW, CH), x = c.getContext('2d');
+          for (const g of parts) x.drawImage(g, 0, 0);
+          armCloth[id] = c;
+        }
+        armCloth.armArt = true;
+      }
       const armPic = id => armCloth && armCloth[id] && armCloth[id].getContext('2d').getImageData(0, 0, CW, CH).data.some((v, i) => i % 4 === 3 && v > 6);
-      const armArt = !!(armPic('arm_L') || armPic('arm_R') || (armCloth && armCloth.armArt));
+      const armArt = !!((armCloth && armCloth.armArt) || armPic('arm_L') || armPic('arm_R'));
       const hasRegion = p => p.region && !(armArt && (p.id === 'arm_L' || p.id === 'arm_R'));
 
       const bboxOf = (ctx) => {
@@ -1054,9 +1284,13 @@
           continue;
         }
         // A sleeve goes just behind the top (the body's over-the-chest layer), so
-        // the top's own picture lies over the sleeve root; without one, last.
+        // the top's own picture lies over the sleeve root. Without a top (only
+        // gloves, say) right above its own arm, so the body still covers its root.
         const topAt = out.findIndex(o => o.id === 'body_over');
-        if (topAt >= 0) out.splice(topAt, 0, sleeve); else out.push(sleeve);
+        const armAt = out.findIndex(o => o.id === id);
+        if (topAt >= 0) out.splice(topAt, 0, sleeve);
+        else if (armAt >= 0) out.splice(armAt + 1, 0, sleeve);
+        else out.push(sleeve);
       }
       // The collar of a suit, over the neck (see buildArt's caller): rides with the chest.
       if (armCloth && armCloth.collar) {

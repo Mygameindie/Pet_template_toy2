@@ -17,14 +17,19 @@ Every pixel of a garment moves with the body part under it:
 | Area on the canvas | Moves with | Use it for |
 |---|---|---|
 | Above y = 606 (yellow) | head | hats, glasses, ears, hair clips |
-| x < 346 or x > 505, y 606–846 (blue) | that arm | sleeves, gloves, bracelets |
+| Off the body, nearer an arm than anything else (blue) | that arm | sleeves, gloves, bracelets |
 | The two circles on the chest (pink) | the chest (it bounces) | bra, the chest of a top |
 | The rest of the middle, down to y = 868 (orange) | body | shirt, waist, belt, collar |
 | Below y = 868, split down the middle at x = 425 (green) | left / right leg | pants, socks, shoes |
 
 Tips:
-- **Sleeves:** let a sleeve's shoulder end overlap the body a little. The part inside the
-  orange area stays on the shoulder, and the rest follows the arm.
+- **Sleeves: draw them in the same file as the top or dress.** You don't need separate sleeve
+  pictures. The app finds the sleeves by itself: every bit of a garment that lies off the body
+  and is closer to an arm than to the body, head or legs is that arm's sleeve, and it turns with
+  the arm (short, long, puffed or wide bell sleeves alike). The part of the garment on the body
+  stays on the body, and the sleeve takes a little of the shoulder with it so no gap opens when
+  the arm swings. A bust drawn a bit wider than the chest, or a skirt flaring at the hips, stays
+  put. The blue areas in `clothing_guide.png` are only a rough guide now.
 - **Pants:** draw both legs; each leg moves on its own. The waistband (above y = 868) stays
   on the body.
 - **Skirts and dresses** would be split between the legs and tear, so mark them `hangs: true`
@@ -39,11 +44,14 @@ Tips:
     the part of a strap on the breast bounced with the chest and the strap broke in two.
   - `<name>_under.png`: drawn **under** the chest (the breasts cover it).
   Example, the bra: cups in `topunderwear1.png`, straps in `topunderwear1_over.png`.
+- **Separate sleeve pictures (optional, old way).** `<name>_arm_L.png` / `<name>_arm_R.png` still
+  work: if a garment has them they are used as they are (drawn under the garment, turned with
+  the arm). Only use them if the automatic sleeves ever cut something wrongly.
 - **Stiff garments.** A garment that covers the chest in one solid piece (a crop top, a tank
   top) would tear where the bouncing chest meets the body. Mark it `stiff: true` in
   `outfit_config.js` (`{ id: "top1", stiff: true }`) and it stays whole on the body,
-  over the chest. The chest doesn't bounce under it. Its sleeves (anything in the blue arm
-  areas) still move with the arms, so draw a top and its sleeves together in one file.
+  over the chest. The chest doesn't bounce under it. Its sleeves still move with the arms, so
+  draw a top and its sleeves together in one file.
 - **Whole garments (bras).** Anything outside the pink circles that lies in an arm or head area
   (a strap over the shoulder, a wide cup) moves with that arm or head, so a bra could come apart
   and stick to an arm. Mark it `whole: true` (`{ id: "topunderwear1", whole: true }`) and the
