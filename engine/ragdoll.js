@@ -47,6 +47,8 @@
                                    // so a coarse mesh looks the same and draws far fewer triangles)
   const FINE_CELLS = 10;           // the same for cloth (skirts, the bodice): its outline bends, and a
                                    // coarse mesh shows that as a jagged edge
+  const SLEEVE_BLEND = 34;         // source px off the body over which a sleeve goes from following the body to the arm
+  const SLEEVE_CELLS = 18;         // mesh cells across a sleeve (finer: its bend near the shoulder is tight)
   const HEM_K = 0.14;              // how hard a skirt's hem is pulled toward where it hangs (per step)
   const HEM_DAMP = 0.78;           // share of the hem's swing kept per step
   const HEM_INERTIA = 0.0035;      // how much the hem lags when the hips are pushed sideways
@@ -719,12 +721,14 @@
           for (let i = 0; i < N; i++) if (dO[i] > EDGE && dA[i] < dB[i] && dA[i] < dO[i]) own[i] = 1;
           const dOwn = dist(own);
           const take = own.slice();
-          for (let i = 0; i < N; i++) if (O[i] && A[i] && dOwn[i] <= ROOT) take[i] = 1;
+          // (The thin strip along the body's edge, left on the garment above,
+          // is part of the root too, or the root could never reach the shoulder.)
+          for (let i = 0; i < N; i++) if ((O[i] && A[i] || !O[i] && dO[i] <= EDGE) && dOwn[i] <= ROOT) take[i] = 1;
           const far = own.slice();
           for (let i = 0; i < N; i++) if (dO[i] <= FAR) far[i] = 0;
           return { take, cut: own, far };
         };
-        val = { L: side(AL, dL, dR), R: side(AR, dR, dL), root: ROOT };
+        val = { L: side(AL, dL, dR), R: side(AR, dR, dL), root: ROOT, dO };
       } catch (err) {
         val = null;                        // pixels unreadable: the old straight cuts are used
       }
@@ -1258,6 +1262,33 @@
           ox: pv.x * cs - b.x0, oy: pv.y * cs - b.y0,
           restAngle: Math.atan2(ch.y - pv.y, ch.x - pv.x),
         };
+        // A sleeve is one piece of cloth with its top: where it meets the body
+        // it stays on the body, and from there out to the arm it stretches and
+        // bends, so it never comes apart from the top when the arm swings.
+        // wb: how much a point of it follows the body (1 on the body, fading
+        // to 0 within SLEEVE_BLEND source px off it, where it is all arm).
+        // Only a sleeve sewn onto the top (some of it lies on the body) is
+        // stretched; an off-the-shoulder sleeve just turns with its arm.
+        const sewn = () => {
+          const dO = masks.dO, SW = CFG.SRC_W, d = r.x.getImageData(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0).data;
+          const w = b.x1 - b.x0;
+          let n = 0;
+          for (let i = 0; i < d.length / 4; i++) {
+            if (d[i * 4 + 3] < 128) continue;
+            const qx = Math.min(SW - 1, Math.floor((b.x0 + (i % w)) / cs)), qy = Math.min(CFG.SRC_H - 1, Math.floor((b.y0 + Math.floor(i / w)) / cs));
+            if (dO[qy * SW + qx] < 1 && ++n > 30 * cs * cs) return true;
+          }
+          return false;
+        };
+        if (!def.drop && masks && masks.dO && sewn()) {
+          const dO = masks.dO, SW = CFG.SRC_W, SH = CFG.SRC_H;
+          sleeve.mesh = meshOf(c, sleeve.ox, sleeve.oy, def.pivot, (ax, ay) => {
+            const qx = Math.max(0, Math.min(SW - 1, Math.round(ax))), qy = Math.max(0, Math.min(SH - 1, Math.round(ay)));
+            const t = Math.min(1, dO[qy * SW + qx] / SLEEVE_BLEND);
+            return { wb: 1 - t * t * (3 - 2 * t) };
+          }, SLEEVE_CELLS);
+          sleeve.mesh.body = true;
+        }
         if (def.drop) {
           // Leg pictures (<garment>_L / _R: shoes, socks) turn with their leg,
           // right above it.
@@ -1377,7 +1408,7 @@
           ctx.scale(1 + SKIRT_WIDEN * lift, 1 - SKIRT_FOLD * lift);
           ctx.translate(0, -hy);
         }
-        if (!(part.mesh && this.drawMesh(ctx, part, inv, ang))) {
+        if (!(part.mesh && this.drawMesh(ctx, part, inv, ang, ax, ay))) {
           ctx.drawImage(part.canvas, -part.ox * inv, -part.oy * inv, part.canvas.width * inv, part.canvas.height * inv);
         }
         ctx.restore();
@@ -1401,9 +1432,22 @@
     // Every cell is drawn as two triangles, each stretched from the picture to
     // where its corners went, so the layer bends smoothly with no gaps.
     // Returns false (draw it flat) when nothing has moved.
-    drawMesh(ctx, part, inv, ang) {
+    drawMesh(ctx, part, inv, ang, ax, ay) {
       const k = this.k, M = part.mesh, pts = M.pts;
       const ca = Math.cos(-ang), sa = Math.sin(-ang);
+      // For a sleeve: where its points would be if they stayed on the body
+      // (turned with the torso about the neck), in the part's frame.
+      let onBody = null;
+      if (M.body) {
+        const N = CFG.particles.N, pv = CFG.particles[part.pivot], n = this.p.N;
+        const tb = this.ang('N', 'P') - this.restAng('N', 'P');
+        const cb = Math.cos(tb), sb = Math.sin(tb);
+        onBody = (sx, sy) => {
+          const bx = (pv.x + sx - N.x) * k, by = (pv.y + sy - N.y) * k;
+          const dx = n.x + bx * cb - by * sb - ax, dy = n.y + bx * sb + by * cb - ay;
+          return [dx * ca - dy * sa, dx * sa + dy * ca];
+        };
+      }
       const chest = {};
       for (const n of SOFT) {
         if (!CFG.soft[n] || CFG.soft[n].anchor !== 'torso') continue;
@@ -1436,6 +1480,10 @@
           sx = rho * Math.sin(phi); sy = M.waist + rho * Math.cos(phi);
         }
         let x = sx * k, y = sy * k;
+        if (onBody && q.wb > 0) {
+          const [bx, by] = onBody(sx, sy);
+          x += (bx - x) * q.wb; y += (by - y) * q.wb;
+        }
         if (q.wc) for (const n in q.wc) { const d = chest[n], w = q.wc[n]; if (d && w) { x += d.x * w; y += d.y * w; } }
         X[i] = x; Y[i] = y;
         moved = Math.max(moved, Math.abs(x - q.sx * k), Math.abs(y - q.sy * k));
