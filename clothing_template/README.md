@@ -17,14 +17,17 @@ Every pixel of a garment moves with the body part under it:
 | Area on the canvas | Moves with | Use it for |
 |---|---|---|
 | Above y = 606 (yellow) | head | hats, glasses, ears, hair clips |
-| x < 346 or x > 505, y 606–846 (blue) | that arm | sleeves, gloves, bracelets |
+| Over the arm's own picture (or within 14 px of it), y 606–846, outside the body (blue) | that arm | sleeves, gloves, bracelets |
 | The two circles on the chest (pink) | the chest (it bounces) | bra, the chest of a top |
 | The rest of the middle, down to y = 868 (orange) | body | shirt, waist, belt, collar |
 | Below y = 868, split down the middle at x = 425 (green) | left / right leg | pants, socks, shoes |
 
 Tips:
-- **Sleeves:** let a sleeve's shoulder end overlap the body a little. The part inside the
-  orange area stays on the shoulder, and the rest follows the arm.
+- **Sleeves:** draw them right in the top's / dress's picture, over the arms (like pants
+  over the legs): whatever covers the arm follows it, from the body's edge out, and the
+  top's side and chest beside the arm stay on the body. Or draw them as their own
+  pictures, `<name>_arm_L.png` / `<name>_arm_R.png`: then each sleeve moves whole,
+  shoulder included, and the top lies over its root.
 - **Pants:** draw both legs; each leg moves on its own. The waistband (above y = 868) stays
   on the body.
 - **Skirts and dresses** would be split between the legs and tear, so mark them `hangs: true`

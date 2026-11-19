@@ -723,6 +723,47 @@
 
       const regionParts = CFG.parts.filter(p => hasRegion(p) && imgs[p.file]);
 
+      // fit (ragdoll_config.js): the part's clothes are what lies over its own
+      // picture, grown by `fit` source px, inside its region box, minus the body
+      // and chest (what lies over those stays on them). `own` is what the part
+      // takes; `body` is what the body gives up: a little less, so the body keeps
+      // a thin strip along its edge over the limb's root and no gap opens there.
+      const grow = (src, r) => {
+        const g = mkRead(CW, CH), R = Math.max(1, Math.round(r * cs)), st = Math.max(1, Math.round(R / 4));
+        for (let dy = -R; dy <= R; dy += st) {
+          for (let dx = -R; dx <= R; dx += st) if (dx * dx + dy * dy <= R * R) g.x.drawImage(src, dx, dy);
+        }
+        return g.c;
+      };
+      const fitMasks = new Map();
+      const fitParts = regionParts.filter(p => p.fit && p.region.t === 'rect');
+      if (fitParts.length) {
+        const torso = mkRead(CW, CH);
+        for (const q of CFG.parts) {
+          if ((q.rest || (q.offset && q.region)) && imgs[q.file]) torso.x.drawImage(imgs[q.file], 0, 0, CW, CH);
+        }
+        const torsoEdge = grow(torso.c, 4);
+        for (const p of fitParts) {
+          const own = mkRead(CW, CH);
+          own.x.drawImage(imgs[p.file], 0, 0, CW, CH);
+          own.x.drawImage(grow(own.c, p.fit), 0, 0);
+          own.x.globalCompositeOperation = 'destination-in';
+          shape(own.x, p.region);
+          own.x.globalCompositeOperation = 'destination-out';
+          own.x.drawImage(torso.c, 0, 0);
+          const body = mkRead(CW, CH);
+          body.x.drawImage(own.c, 0, 0);
+          body.x.globalCompositeOperation = 'destination-out';
+          body.x.drawImage(torsoEdge, 0, 0);
+          fitMasks.set(p, { own: own.c, body: body.c });
+        }
+      }
+      // Cut by a part's area: its fit mask when it has one, else its region shape.
+      const area = (ctx, p, forBody) => {
+        const m = fitMasks.get(p);
+        if (m) ctx.drawImage(forBody ? m.body : m.own, 0, 0); else shape(ctx, p.region);
+      };
+
       // A layer that bends while drawn gets a mesh: a grid of points laid over
       // its picture, each with weights for how it follows the body (see
       // drawMesh). Only the grid cells with something in them are kept.
@@ -841,7 +882,7 @@
           w.x.drawImage(cloth, 0, 0);
           if (hasRegion(part)) {
             w.x.globalCompositeOperation = 'destination-in';
-            shape(w.x, part.region);
+            area(w.x, part);
             // The chest wins where its region overlaps another (the arms
             // reach in over the side of the chest), so a bra cup only ever
             // moves with the chest.
@@ -864,7 +905,7 @@
               const t = mkRead(CW, CH);
               t.x.drawImage(stiff, 0, 0);
               t.x.globalCompositeOperation = 'destination-in';
-              shape(t.x, part.region);
+              area(t.x, part);
               w.x.globalCompositeOperation = 'source-over';
               w.x.drawImage(t.c, 0, 0);
             }
@@ -875,7 +916,8 @@
             // a strip of clothes under the cut line (pants, tights). It covers the
             // gap that would open between the waist and the legs' clothes.
             for (const o of regionParts) {
-              shape(w.x, o.bodyKeeps && o.region.t === 'rect'
+              if (fitMasks.has(o)) area(w.x, o, true);
+              else shape(w.x, o.bodyKeeps && o.region.t === 'rect'
                 ? Object.assign({}, o.region, { y0: o.region.y0 + o.bodyKeeps }) : o.region);
             }
             // ...plus whatever hangs from the hips over the legs...
@@ -982,7 +1024,7 @@
         st.x.drawImage(stiff, 0, 0);
         if (!armArt) {
           st.x.globalCompositeOperation = 'destination-out';
-          for (const o of regionParts) if (!o.offset) shape(st.x, o.region);
+          for (const o of regionParts) if (!o.offset) area(st.x, o, true);
         }
         t.x.drawImage(st.c, 0, 0);
         overAll = t.c;

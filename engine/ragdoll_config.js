@@ -105,8 +105,13 @@
     { id: 'tail',  file: (window.GAME_CONFIG && window.GAME_CONFIG.tailFile) || 'back_tail',  optional: true, pivot: 'P', child: 'Tt' },
     { id: 'leg_L', file: 'leg_L', drop: true, bodyKeeps: LEG_DROP, pivot: 'HipL', child: 'FL', region: { t: 'rect', x0: 0,   y0: 868, x1: 425, y1: SRC_H } },
     { id: 'leg_R', file: 'leg_R', drop: true, bodyKeeps: LEG_DROP, pivot: 'HipR', child: 'FR', region: { t: 'rect', x0: 425, y0: 868, x1: SRC_W, y1: SRC_H } },
-    { id: 'arm_L', file: 'arm_L', pivot: 'SL', child: 'HL', region: { t: 'rect', x0: 0,   y0: 606, x1: 346,   y1: 846 } },
-    { id: 'arm_R', file: 'arm_R', pivot: 'SR', child: 'HR', region: { t: 'rect', x0: 505, y0: 606, x1: SRC_W, y1: 846 } },
+    // fit: sleeves drawn in the top's / dress's own picture are cut like pants are:
+    // whatever lies over the arm's own picture (or within `fit` source px of it)
+    // goes with the arm, from the body's edge out, instead of everything in the
+    // box. So the top's side and chest beside the arm stay on the body. Sleeve
+    // pictures (<name>_arm_L/_R.png) still replace this when a garment has them.
+    { id: 'arm_L', file: 'arm_L', fit: 14, pivot: 'SL', child: 'HL', region: { t: 'rect', x0: 0,   y0: 606, x1: 425,   y1: 846 } },
+    { id: 'arm_R', file: 'arm_R', fit: 14, pivot: 'SR', child: 'HR', region: { t: 'rect', x0: 425, y0: 606, x1: SRC_W, y1: 846 } },
     { id: 'body',  file: 'body',  pivot: 'N', child: 'P', rest: true },
     { id: 'chest_L', file: 'chest_L', optional: true, pivot: 'N', child: 'P', offset: 'CL', region: { t: 'ellipse', cx: 381, cy: 676, rx: 54, ry: 56 } },
     { id: 'chest_R', file: 'chest_R', optional: true, pivot: 'N', child: 'P', offset: 'CR', region: { t: 'ellipse', cx: 469, cy: 676, rx: 54, ry: 56 } },
