@@ -1,67 +1,193 @@
-# Copies this template's engine/ to every game in sync_targets.txt.
-# Runs when engine/ (or the shared script / README / target list) changes on
-# the default branch, or by hand: Actions tab -> "Sync engine to games" -> Run.
-# Needs the secret ENGINE_SYNC_TOKEN: a fine-grained GitHub token with
-# Contents: Read and write on every game repo in sync_targets.txt.
-name: Sync engine to games
+# Releases this template's engine.
+#
+# A PUSH to the default branch (e.g. merging a pull request) never writes to a
+# game. It only runs the gate and, in the canonical template, publishes the
+# release tag engine-v<version>.
+#
+# Games are written ONLY by a manual run: Actions tab -> "Release engine to
+# games" -> Run workflow. "Dry run" is ticked by default: every game is cloned,
+# gets the new engine in a throw-away copy and is smoke-tested, nothing is
+# pushed. Untick it to publish.
+#
+#  gate   - Engine check (drift + smoke tests + compat), release rules on.
+#  tag    - canonical template only (push, or a manual run with dry run off):
+#           creates the release tag engine-v<version> if it is new.
+#  plan   - the games in sync_targets.txt.
+#  game   - manual runs only, one job PER GAME: prepare (clone + copy engine,
+#           credentialed) -> smoke tests (NO credentials) -> publish (push,
+#           credentialed; skipped work in a dry run). One game failing does not
+#           stop the others.
+#  report - stages + one row per game: engine before, candidate, engine after
+#           this run, tests, result. Fails the run if a stage or a game failed
+#           (a partial release shows as a failed run).
+#
+# Needs the secret ENGINE_SYNC_TOKEN to publish: a fine-grained GitHub token
+# with Contents: Read and write on every game repo in sync_targets.txt. A dry
+# run works without it for public games. The token is passed to single git
+# commands as a header (never in a URL, git config, or the tested folder).
+name: Release engine to games
 
 on:
   push:
     paths:
       - "engine/**"
+      - "engine.lock"
       - "sync_engine.sh"
       - "README.md"
       - "sync_targets.txt"
+      - "tools/**"
+      - "tests/**"
+      - "package.json"
+      - "package-lock.json"
+      - "playwright.config.mjs"
+      - ".github/workflows/sync_engine.yml"
+      - ".github/workflows/engine_check.yml"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: test every game with the new engine, push nothing"
+        type: boolean
+        default: true
 
 concurrency:
   group: sync-engine
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
-  sync:
-    # Only the template itself (not a game made from it with "Use this template"),
-    # and only its default branch; work branches don't sync.
+  gate:
+    # Only the template itself (not a game made from it with "Use this
+    # template"), and only its default branch; work branches don't release.
+    if: github.repository == 'Mygameindie/Pet_template_toy2' && github.ref_name == github.event.repository.default_branch
+    uses: ./.github/workflows/engine_check.yml
+    with:
+      require_release: true
+
+  tag:
+    name: Release tag engine-v${{ needs.gate.outputs.version }}
+    needs: gate
+    if: needs.gate.outputs.canonical == 'true' && (github.event_name == 'push' || inputs.dry_run == false)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # this job only pushes a tag; it runs no game code
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create the release tag if it is new
+        env:
+          TAG: engine-v${{ needs.gate.outputs.version }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "::notice::${TAG} already exists (the gate checked it holds this engine)"
+          else
+            git tag "${TAG}" HEAD
+            git push origin "refs/tags/${TAG}"
+            echo "### Released ${TAG} at ${GITHUB_SHA::12}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  plan:
     if: github.repository == 'Mygameindie/Pet_template_toy2' && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.t.outputs.targets }}
     steps:
-      - name: Check out this template
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: t
+        run: echo "targets=$(node tools/engine.mjs targets)" >> "$GITHUB_OUTPUT"
+
+  game:
+    name: ${{ matrix.target }} ← engine ${{ needs.gate.outputs.version }}${{ inputs.dry_run != false && ' (dry run)' || '' }}
+    needs: [gate, plan, tag]
+    # manual runs only; tag is skipped in a non-canonical template / dry run
+    if: >-
+      always() && github.event_name == 'workflow_dispatch'
+      && needs.gate.result == 'success' && needs.plan.result == 'success'
+      && needs.plan.outputs.targets != '[]'
+      && (needs.tag.result == 'success' || needs.tag.result == 'skipped')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.plan.outputs.targets) }}
+    env:
+      TARGET: ${{ matrix.target }}
+      DRY_RUN: ${{ inputs.dry_run != false && '1' || '0' }}
+    steps:
+      - name: Record a setup failure (replaced by the release steps)
+        env:
+          CANDIDATE: ${{ needs.gate.outputs.version }}
+        run: |
+          # work folders live outside the template checkout
+          RESULT_DIR="${RUNNER_TEMP}/sync-results"
+          echo "RESULT_DIR=${RESULT_DIR}" >> "$GITHUB_ENV"
+          echo "GAMES=${RUNNER_TEMP}/games" >> "$GITHUB_ENV"
+          mkdir -p "${RESULT_DIR}"
+          printf '{"repo":"%s","oldVersion":"unknown","candidateVersion":"%s","resultVersion":"unknown","tests":"not run","status":"failed","phase":"setup","detail":"job setup failed before the release steps"}' \
+            "${TARGET}" "${CANDIDATE}" > "${RESULT_DIR}/${TARGET//\//_}.json"
+      - uses: actions/checkout@v4
         with:
           path: template
-
-      - name: Copy engine/ to every game and push
-        env:
-          TOKEN: ${{ secrets.ENGINE_SYNC_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: template/package-lock.json
+      - name: Install test browser
+        working-directory: template
         run: |
-          set -euo pipefail
-          if [ -z "${TOKEN}" ]; then
-            echo "::error::Secret ENGINE_SYNC_TOKEN is missing. See README.md (one-time setup)."
-            exit 1
-          fi
-          git config --global user.name  "engine-sync-bot"
-          git config --global user.email "engine-sync-bot@users.noreply.github.com"
-          SRC_SHA="$(git -C template rev-parse --short HEAD)"
-          failed=0
-          # One owner/repo per line; blank lines and # comments are ignored.
-          while read -r repo; do
-            echo "::group::${repo}"
-            dir="game_${repo//\//_}"
-            if ! git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${repo}.git" "$dir"; then
-              echo "::error::Could not clone ${repo} (does the token have access to it?)"
-              echo "::endgroup::"; failed=1; continue
-            fi
-            ./template/sync_engine.sh "$dir"
-            cd "$dir"
-            git add -A engine sync_engine.sh README.md
-            if git diff --cached --quiet; then
-              echo "${repo}: already up to date"
-            else
-              git commit -m "Sync engine from ${GITHUB_REPOSITORY}@${SRC_SHA}"
-              git push origin HEAD
-              echo "${repo}: engine updated"
-            fi
-            cd ..
-            echo "::endgroup::"
-          done < <(grep -vE '^\s*(#|$)' template/sync_targets.txt | tr -d '\r')
-          exit $failed
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Prepare (clone ${{ matrix.target }}, copy the engine in)
+        working-directory: template
+        env:
+          SYNC_TOKEN: ${{ secrets.ENGINE_SYNC_TOKEN }}
+          REQUIRE_TOKEN: ${{ inputs.dry_run == false && '1' || '0' }}
+        run: tools/sync_target.sh prepare "${TARGET}" "https://github.com/${TARGET}.git" "${GAMES}"
+      - name: Smoke tests on ${{ matrix.target }} (no credentials)
+        working-directory: template
+        run: tools/sync_target.sh test "${TARGET}" "${GAMES}"
+      - name: Publish${{ inputs.dry_run != false && ' (dry run, report only)' || '' }}
+        working-directory: template
+        env:
+          SYNC_TOKEN: ${{ inputs.dry_run == false && secrets.ENGINE_SYNC_TOKEN || '' }}
+        run: tools/sync_target.sh publish "${TARGET}" "${GAMES}"
+      - name: Keep the result for the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-result-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/sync-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  report:
+    name: Release report
+    needs: [gate, tag, plan, game]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        continue-on-error: true   # none on a push run; missing games are reported below
+        with:
+          pattern: sync-result-*
+          path: sync-results
+          merge-multiple: true
+      - name: Stages and per-game engine release table
+        env:
+          TARGETS: ${{ needs.plan.outputs.targets }}
+          GATE: ${{ needs.gate.result }}
+          TAG: ${{ needs.tag.result }}
+          PLAN: ${{ needs.plan.result }}
+          PUBLISH: ${{ github.event_name == 'workflow_dispatch' && 'yes' || 'no' }}
+        run: |
+          node tools/sync_report.mjs sync-results "${TARGETS}" \
+            --stage "gate=${GATE}" --stage "tag=${TAG}" --stage "plan=${PLAN}" --publish "${PUBLISH}"

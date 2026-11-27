@@ -1,0 +1,10 @@
+{
+  "canonical": false,
+  "version": "1.0.0",
+  "hash": "sha256:a8346b589cf0ec09b071304a41a717a88ab44224bbc3ef930a3beeb80129b817",
+  "source": {
+    "repo": "Mygameindie/Pet_template_toy",
+    "ref": "engine-v1.0.0",
+    "commit": "aac536c2374567e6614860bb41fa2f46ef8c83ce"
+  }
+}

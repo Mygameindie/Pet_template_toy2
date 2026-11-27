@@ -29,13 +29,15 @@ if [ "$TARGET" = "$HERE" ]; then
   exit 1
 fi
 
-# Copy the shared files: engine/ (exact mirror), this script, and the README.
+# Copy the shared files: engine/ (exact mirror, incl. engine/VERSION), this
+# script, and the README.
 rm -rf "$TARGET/engine"
 cp -R "$HERE/engine" "$TARGET/engine"
 cp "$HERE/sync_engine.sh" "$TARGET/sync_engine.sh"
 [ -f "$HERE/README.md" ] && cp "$HERE/README.md" "$TARGET/README.md"
 
-echo "✅ Engine synced to $TARGET"
+VERSION="$(tr -d ' \r\n' < "$HERE/engine/VERSION" 2>/dev/null || true)"
+echo "✅ Engine ${VERSION:-(unversioned)} synced to $TARGET"
 if diff -r "$HERE/engine" "$TARGET/engine" > /dev/null; then
   echo "✅ Verified: engine/ is identical in both repos."
 else
