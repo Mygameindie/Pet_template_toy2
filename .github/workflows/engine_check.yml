@@ -50,6 +50,7 @@ jobs:
       - name: Read engine.lock
         id: pin
         run: |
+          # shellcheck disable=SC2016  # ${...} below is JavaScript, not shell
           node -e '
             const l = JSON.parse(require("fs").readFileSync("engine.lock", "utf8"));
             const s = l.source || {};
