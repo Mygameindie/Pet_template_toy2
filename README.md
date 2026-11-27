@@ -1,20 +1,26 @@
 # Pet Game — Shared Engine + Per-Game Content
 
 Several games run on **the same engine** but are **different games**.
-There are two engine families, each with one TEMPLATE repo that owns it:
+There are two families, each with one TEMPLATE repo that releases the engine
+to its games. Both families run **one engine with one source**: `engine/` in
+`Pet_template_toy` (its version is `engine/VERSION`). `Pet_template_toy2`
+carries a pinned copy of a released version (`engine.lock`).
 
-| Family | Template (edit the engine HERE) | Games that get its engine |
+| Family | Template (releases to its games) | Games that get its engine |
 |---|---|---|
 | 1 pet | `Pet_template_toy` | `Seafairycookiepet` |
 | 2+ pets | `Pet_template_toy2` | `Devilangelpet`, `Temu` |
 
 ```
-engine/           SHARED — identical in every game of the family. Edit it
-                  ONLY in the family's template repo; it is copied to the
-                  games automatically (see below).
+engine/           SHARED — the same in every game. Edit it ONLY in
+                  Pet_template_toy; it is released to the games (see below).
+engine/VERSION    SHARED — the engine version every game shows.
 sync_engine.sh    SHARED — the script that copies engine/ to another repo.
 README.md         SHARED — this file.
 sync_targets.txt  TEMPLATE ONLY — the games this template's engine goes to.
+engine.lock       TEMPLATE ONLY — which engine version this template has.
+tools/, tests/    TEMPLATE ONLY — release tools and browser smoke tests
+                  (package.json etc. are for these only; the game needs no build).
 
 game_config.js    PER-GAME — how many characters, their positions,
                   art suffixes, and fallback tints.
@@ -33,16 +39,41 @@ index.html        PER-GAME — page title + script list.
 
 ## How to change something
 
-**Game behavior for every game in a family** (physics, a mode, a bug fix):
-1. Edit the file in `engine/` in the family's **template** repo.
-2. Commit and push the template to its default branch.
-3. That's it: the GitHub Action `.github/workflows/sync_engine.yml` copies
-   `engine/` (plus `sync_engine.sh` and this README) into every game listed in
-   `sync_targets.txt` and pushes it there. Watch it in the template's
-   **Actions** tab.
+**Game behavior for every game** (physics, a mode, a bug fix):
+1. In `Pet_template_toy`, on a work branch: edit `engine/`, raise the number
+   in `engine/VERSION` (1.2.3 -> 1.2.4 for a fix, 1.3.0 for a feature), then
+   run `npm run engine:lock` and commit `engine/` and `engine.lock` together.
+2. Open a pull request. The **Engine check** runs the browser smoke tests on
+   this template AND on `Pet_template_toy2` with the new engine. If you also
+   change `Pet_template_toy2` for it, use a branch with the **same name** there:
+   the check then tests the two branches together.
+3. Merge. The **Release engine to games** workflow tests again, tags the
+   release `engine-v<version>`, and releases it to the games in
+   `sync_targets.txt`: one job per game, each tested with the new engine
+   before it is pushed. A game whose tests fail is not changed; the run shows
+   it as failed and the others still get the engine.
+4. `Pet_template_toy2` takes the release when you choose: on a branch, run
+   `git clone --branch engine-v<version> https://github.com/Mygameindie/Pet_template_toy ../engine-src`
+   then `npm run engine:pull -- --from ../engine-src`, commit, open a pull
+   request, merge. Its release workflow then sends it to its games.
 
-Never edit `engine/` inside a game repo (Seafairycookiepet, Devilangelpet, Temu):
-the next sync from the template overwrites it.
+Never edit `engine/` inside a game repo (Seafairycookiepet, Devilangelpet, Temu) or in
+`Pet_template_toy2`: the Engine check fails on a changed copy ("engine
+drift"), and the next release overwrites it.
+
+**Checks and releases on GitHub** (Actions tab):
+- *Engine check* (every push and pull request): engine drift, smoke tests.
+  A pull request into the default branch of `Pet_template_toy2` also needs
+  its engine pinned to a release tag; a work branch may pin a branch of
+  `Pet_template_toy` while both are being changed (a warning, not an error).
+- *Release engine to games*: the run summary has one row per game with its
+  engine version before and after, the test result and the outcome. A run by
+  hand is a dry run unless you untick it: it tests every game, pushes nothing.
+
+Run the tests yourself: `npm ci`, `npx playwright install chromium`, then
+`npm test` (`GAME_DIR=../<GameRepo> npm test` tests another game folder).
+`npm run engine:check` runs the drift check, `npm run test:tools` the release
+tools' own tests (local throw-away repos, no network, no token).
 
 Adding a new game to a family: add its `owner/repo` line to the template's
 `sync_targets.txt` (and give the sync token access to it, see below).

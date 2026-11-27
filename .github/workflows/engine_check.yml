@@ -1,0 +1,156 @@
+# Engine check: runs on every push and pull request, and is the gate of the
+# release workflow (sync_engine.yml calls it with require_release: true).
+#
+#  drift  - engine/ must match engine.lock. In the canonical template every
+#           engine change needs a new engine/VERSION. In a template that pins
+#           a copy, engine/ must equal the pinned source commit, and a pull
+#           request into the default branch (or a release) needs the pin to be
+#           a release tag engine-v<version>. Work branches may pin a branch of
+#           the canonical template during a coordinated update (warning only).
+#  smoke  - browser smoke tests of this template (tests/smoke.spec.mjs).
+#  compat - canonical template only: the candidate engine is copied into each
+#           template listed in engine.lock "consumers" (its branch with the
+#           same name when it has one, so a coordinated update is tested
+#           together; else its default branch) and their smoke tests run.
+# The file is identical in every template.
+name: Engine check
+
+on:
+  push:
+  pull_request:
+  workflow_call:
+    inputs:
+      require_release:
+        type: boolean
+        default: false
+    outputs:
+      version:
+        value: ${{ jobs.drift.outputs.version }}
+      canonical:
+        value: ${{ jobs.drift.outputs.canonical }}
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Engine drift
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      canonical: ${{ steps.pin.outputs.canonical }}
+      consumers: ${{ steps.pin.outputs.consumers }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # base commit + tags
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Read engine.lock
+        id: pin
+        run: |
+          node -e '
+            const l = JSON.parse(require("fs").readFileSync("engine.lock", "utf8"));
+            const s = l.source || {};
+            console.log(`canonical=${!!l.canonical}`);
+            console.log(`repo=${s.repo || ""}`);
+            console.log(`commit=${s.commit || ""}`);
+            console.log(`consumers=${JSON.stringify(l.consumers || [])}`);
+          ' >> "$GITHUB_OUTPUT"
+      - name: Check out the pinned engine source
+        if: steps.pin.outputs.canonical == 'false'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pin.outputs.repo }}
+          ref: ${{ steps.pin.outputs.commit }}
+          path: .engine-source
+          fetch-depth: 0   # tags, to verify the release tag
+      - name: Engine drift check
+        id: check
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          REQUIRE_RELEASE: ${{ (inputs.require_release || (github.event_name == 'pull_request' && github.base_ref == github.event.repository.default_branch)) && '1' || '' }}
+          CANONICAL: ${{ steps.pin.outputs.canonical }}
+        run: |
+          args=(check)
+          [ -n "${BASE}" ] && args+=(--base "${BASE}")
+          [ -n "${REQUIRE_RELEASE}" ] && args+=(--require-release)
+          [ "${CANONICAL}" = "false" ] && args+=(--source .engine-source)
+          node tools/engine.mjs "${args[@]}"
+
+  smoke:
+    name: Smoke tests (this template)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Browser smoke tests
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-traces
+          path: test-results/
+          retention-days: 7
+
+  compat:
+    name: Engine on ${{ matrix.consumer }}
+    needs: drift
+    if: needs.drift.outputs.canonical == 'true' && needs.drift.outputs.consumers != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        consumer: ${{ fromJSON(needs.drift.outputs.consumers) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: template
+      - name: Pick the consumer branch
+        id: ref
+        env:
+          CONSUMER: ${{ matrix.consumer }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if git ls-remote --exit-code --heads "https://github.com/${CONSUMER}.git" "${BRANCH}" >/dev/null 2>&1; then
+            echo "ref=${BRANCH}" >> "$GITHUB_OUTPUT"
+            echo "::notice title=${CONSUMER}::coordinated update: testing its branch ${BRANCH}"
+          else
+            echo "ref=" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.consumer }}
+          ref: ${{ steps.ref.outputs.ref }}
+          path: consumer
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: template/package-lock.json
+      - name: Copy the candidate engine into the consumer
+        env:
+          CONSUMER: ${{ matrix.consumer }}
+        run: |
+          pinned="$(node template/tools/engine.mjs version --dir consumer)"
+          candidate="$(node template/tools/engine.mjs version --dir template)"
+          ./template/sync_engine.sh consumer
+          {
+            echo "### ${CONSUMER}"
+            echo ""
+            echo "| Pinned engine | Candidate engine |"
+            echo "|---|---|"
+            echo "| ${pinned:-unversioned} | ${candidate} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Consumer smoke tests with the candidate engine
+        working-directory: template
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          GAME_DIR="${GITHUB_WORKSPACE}/consumer" npx playwright test

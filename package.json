@@ -1,0 +1,15 @@
+{
+  "name": "pet-template-dev-tools",
+  "private": true,
+  "description": "Test and release tools only. The game itself has no build step and needs none of this.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "engine:check": "node tools/engine.mjs check",
+    "engine:lock": "node tools/engine.mjs lock",
+    "test:tools": "bash tools/test_release_tools.sh"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
+  }
+}
