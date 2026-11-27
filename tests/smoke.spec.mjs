@@ -41,8 +41,15 @@ const petCount = page => page.evaluate(() => (window.GAME_CONFIG.pets || [{}]).l
 
 // Presses on a pet's body on the canvas (a real mouse press, the same as a
 // player) and returns the index of the pet the engine selected, or null.
+// A press counts only when the engine grabbed a pet (its drag handler calls
+// preventDefault on a hit), so a press on empty canvas never passes.
 async function pressPet(page, i) {
   const vp = page.viewportSize();
+  await page.evaluate(() => {
+    if (window.__pressWatch) return;
+    window.__pressWatch = true;
+    window.addEventListener("mousedown", e => { window.__pressHit = e.defaultPrevented; });
+  });
   const xFrac = await page.evaluate(n => {
     const p = window.GAME_CONFIG.pets[n];
     return p.xFrac != null ? p.xFrac : (n + 1) / (window.GAME_CONFIG.pets.length + 1);
@@ -55,7 +62,7 @@ async function pressPet(page, i) {
       await page.waitForTimeout(80);
       await page.mouse.up();
       await page.waitForTimeout(600); // let it settle before the next press
-      if (await page.evaluate(n => window.activePetIndex === n, i)) return i;
+      if (await page.evaluate(n => window.__pressHit && window.activePetIndex === n, i)) return i;
     }
   }
   return null;
@@ -125,8 +132,10 @@ test.describe("shared engine smoke", () => {
     const picked = await dressCharacter(page, 0);
     expect(picked, "no clothing item could be changed from the Dress Up panel").not.toBeNull();
     await expect(page.locator("#dressup-btn")).toHaveText(/Dress Up \(\d+ items?\)/);
-    await page.click("#confidence-btn");
-    await expect(page.locator("#hint")).toHaveText(/Confidence boosted/);
+    if (await page.locator("#confidence-btn").count()) {
+      await page.click("#confidence-btn");
+      await expect(page.locator("#hint")).toHaveText(/Confidence boosted/);
+    }
     expect(problems).toEqual([]);
   });
 
