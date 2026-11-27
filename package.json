@@ -7,7 +7,8 @@
     "test": "playwright test",
     "engine:check": "node tools/engine.mjs check",
     "engine:lock": "node tools/engine.mjs lock",
-    "test:tools": "bash tools/test_release_tools.sh"
+    "test:tools": "bash tools/test_release_tools.sh",
+    "test:server": "node --test tests/static-server.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.65.1"

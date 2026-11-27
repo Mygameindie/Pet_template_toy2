@@ -125,25 +125,38 @@ OLD="$(git -C "$TEMPLATE" log --diff-filter=A --format=%H -- engine.lock | tail 
 make_game old-one-pet "$OLD"                                     # unversioned older engine
 make_game current HEAD                                          # already has this engine
 make_game broken "$OLD" "sed -i 's/window.GAME_CONFIG = {/window.GAME_CONFIG = {{/' game_config.js"   # game whose page breaks
+make_game rejecting "$OLD"
+printf '#!/bin/sh\necho "protected branch" >&2\nexit 1\n' > "$REM/rejecting.git/hooks/pre-receive"
+chmod +x "$REM/rejecting.git/hooks/pre-receive"
 RES="$TMP/results"; WORK="$TMP/work"
-sync() { RESULT_DIR="$RES" RUN_TESTS="$RUN_TESTS" "$TEMPLATE/tools/sync_target.sh" "$1" "$REM/$2.git" "$WORK"; }
+CAND="$($ENGINE version)"
+# A fake token: it must never show up in a URL, git config, the tested
+# folder, the test processes' environment, logs or results.
+FAKE="FAKE-TOKEN-do-not-leak-$$"
+FAKE64="$(printf 'x-access-token:%s' "$FAKE" | base64 | tr -d '\n')"
+sync() { SYNC_TOKEN="$FAKE" RESULT_DIR="$RES" RUN_TESTS="${RUN_TESTS_OVERRIDE:-$RUN_TESTS}" "$TEMPLATE/tools/sync_target.sh" all "$1" "$REM/$2.git" "$WORK"; }
+phase() { SYNC_TOKEN="$FAKE" RESULT_DIR="$RES" "$TEMPLATE/tools/sync_target.sh" "$@"; }
+field() { node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))[process.argv[2]]))' "$RES/${1//\//_}.json" "$2"; }
 before_old="$(git -C "$REM/old-one-pet.git" rev-parse HEAD)"
 before_cur="$(git -C "$REM/current.git" rev-parse HEAD)"
 before_brk="$(git -C "$REM/broken.git" rev-parse HEAD)"
+before_rej="$(git -C "$REM/rejecting.git" rev-parse HEAD)"
 
 DRY_RUN=1 expect 0 "dry run reports a change and pushes nothing" sync fixture/old-one-pet old-one-pet
 has "  dry run result" "result: dry-run"
 [ "$(git -C "$REM/old-one-pet.git" rev-parse HEAD)" = "$before_old" ] && ok "  remote unchanged after dry run" || bad "  remote changed after dry run"
+case "$(field fixture/old-one-pet resultVersion)" in unversioned*) ok "  dry run records the engine the game still has" ;; *) bad "  dry run resultVersion: $(field fixture/old-one-pet resultVersion)" ;; esac
+[ "$(field fixture/old-one-pet candidateVersion)" = "$CAND" ] && ok "  dry run records the candidate $CAND" || bad "  candidate version"
 rm -rf "$RES"
 
 expect 0 "out-of-date game is updated" sync fixture/old-one-pet old-one-pet
-has "  shows engine before -> after" "engine — -> $($ENGINE version)\|engine unversioned"
+has "  shows engine before, candidate, after" "engine unversioned (.*) (candidate $CAND, now $CAND)"
 after_old="$(git -C "$REM/old-one-pet.git" rev-parse HEAD)"
-if [ "$after_old" != "$before_old" ] && [ "$(git -C "$REM/old-one-pet.git" show HEAD:engine/VERSION | tr -d '\r\n')" = "$($ENGINE version)" ]; then
+if [ "$after_old" != "$before_old" ] && [ "$(git -C "$REM/old-one-pet.git" show HEAD:engine/VERSION | tr -d '\r\n')" = "$CAND" ]; then
   ok "  remote got the engine and engine/VERSION"; else bad "  remote not updated"; fi
 changed="$(git -C "$REM/old-one-pet.git" diff --name-only "$before_old" HEAD | grep -v -E '^(engine/|sync_engine.sh$|README.md$)' || true)"
 [ -z "$changed" ] && ok "  only shared files changed (game files untouched)" || bad "  game files changed: $changed"
-git -C "$REM/old-one-pet.git" log -1 --format=%s | grep -q "^Engine $($ENGINE version) from " && ok "  commit message names the version" || bad "  commit message"
+git -C "$REM/old-one-pet.git" log -1 --format=%s | grep -q "^Engine $CAND from " && ok "  commit message names the version" || bad "  commit message"
 
 expect 0 "up-to-date game is left alone" sync fixture/current current
 has "  up to date" "result: up-to-date"
@@ -151,23 +164,58 @@ has "  up to date" "result: up-to-date"
 
 expect 1 "missing repo fails" sync fixture/missing missing
 has "  clone failure reported" "could not clone"
+[ "$(field fixture/missing phase)" = "prepare" ] && ok "  failure phase recorded (prepare)" || bad "  phase"
+
+RUN_TESTS_OVERRIDE=0 expect 1 "push rejected by the remote fails" sync fixture/rejecting rejecting
+has "  push failure reported" "push failed"
+case "$(field fixture/rejecting resultVersion)" in unversioned*) ok "  failed push records the engine the game still has" ;; *) bad "  failed push resultVersion: $(field fixture/rejecting resultVersion)" ;; esac
+[ "$(git -C "$REM/rejecting.git" rev-parse HEAD)" = "$before_rej" ] && ok "  rejecting remote unchanged" || bad "  rejecting remote changed"
+
+echo "== credentials stay out of URLs, config, served files and tests"
+expect 1 "clone URL with credentials is refused" phase prepare fixture/creds "https://user:secret@github.com/x/y.git" "$WORK"
+has "  refusal reported" "refusing a clone URL with credentials"
+SYNC_TOKEN="" REQUIRE_TOKEN=1 RESULT_DIR="$RES" expect 1 "publishing without a token fails early" "$TEMPLATE/tools/sync_target.sh" prepare fixture/notoken "$REM/current.git" "$WORK"
+has "  names the missing secret" "ENGINE_SYNC_TOKEN secret missing"
+expect 0 "prepare (credentialed)" phase prepare fixture/phased "$REM/old-one-pet.git" "$WORK"
+expect 1 "publish refuses a game that was not tested" phase publish fixture/phased "$WORK"
+has "  explains why" "test phase did not pass"
+expect 0 "prepare again" phase prepare fixture/phased "$REM/old-one-pet.git" "$WORK"
+ENVDUMP="$TMP/test-phase-env.txt"
+SMOKE_CMD="env > '$ENVDUMP'" expect 0 "test phase runs" phase test fixture/phased "$WORK"
+if [ -s "$ENVDUMP" ] && ! grep -q -e "$FAKE" -e "$FAKE64" -e '^SYNC_TOKEN=' "$ENVDUMP"; then ok "  test processes get no token"; else bad "  token visible to the test phase"; fi
+grep -q '^GAME_DIR=' "$ENVDUMP" && ok "  test phase got GAME_DIR" || bad "  GAME_DIR missing"
+if cat "$WORK"/game_*/.git/config | grep -q -i -e extraheader -e "$FAKE" -e credential; then bad "  credentials in a game's git config"; else ok "  no credentials in any game's git config"; fi
+leaks="$(grep -r -l -e "$FAKE" -e "$FAKE64" "$WORK" "$RES" 2>/dev/null || true)"
+[ -z "$leaks" ] && ok "  fake token appears in no file (work dir, served games, results)" || bad "  token found in: $leaks"
 
 if [ "$RUN_TESTS" = "1" ]; then
   expect 1 "game whose smoke tests fail is not pushed" sync fixture/broken broken
   has "  test failure reported" "smoke tests failed"
   [ "$(git -C "$REM/broken.git" rev-parse HEAD)" = "$before_brk" ] && ok "  broken game unchanged" || bad "  broken game was pushed"
+  [ "$(field fixture/broken phase)" = "test" ] && ok "  failure phase recorded (test)" || bad "  phase"
 fi
 
-TARGETS='["fixture/old-one-pet","fixture/current","fixture/missing","fixture/broken","fixture/never-ran"]'
-expect 1 "report fails the run on a partial failure" node "$TEMPLATE/tools/sync_report.mjs" "$RES" "$TARGETS"
+echo "== report"
+rm -f "$RES/fixture_creds.json" "$RES/fixture_notoken.json" "$RES/fixture_phased.json" "$RES/fixture_broken.json"
+TARGETS='["fixture/old-one-pet","fixture/current","fixture/missing","fixture/rejecting","fixture/never-ran"]'
+expect 1 "report fails the run on a partial failure" node "$TEMPLATE/tools/sync_report.mjs" "$RES" "$TARGETS" --stage gate=success --stage tag=skipped --stage plan=success
 has "  headline says partial" "Partial release"
-has "  per-game row with versions" "| fixture/old-one-pet | unversioned"
-has "  job that never reported counts as failed" "fixture/never-ran | ? | ? | ? | ❌ failed"
+has "  per-game row: before, candidate, after" "| fixture/old-one-pet | unversioned ([0-9a-f]*) | $CAND | $CAND |"
+has "  failed push keeps the old engine in 'after'" "| fixture/rejecting | unversioned ([0-9a-f]*) | $CAND | unversioned"
+has "  job that never reported = setup failure" "fixture/never-ran .*job setup failed"
+has "  stage table" "| tag | ⏭ skipped |"
 echo "$LAST" | sed 's/^/      /'
-# the same report over only the games that went fine
+expect 1 "gate failure: report fails, games not attempted" node "$TEMPLATE/tools/sync_report.mjs" "$TMP/none" "$TARGETS" --stage gate=failure --stage tag=skipped --stage plan=success
+has "  stopped headline" "Stopped: gate failure"
+has "  games not attempted" "not attempted: gate failure"
+expect 1 "tag failure: games not attempted" node "$TEMPLATE/tools/sync_report.mjs" "$TMP/none" "$TARGETS" --stage gate=success --stage tag=failure --stage plan=success
+has "  names the tag stage" "not attempted: release tag failure"
+expect 0 "push run (no publishing): verified, games not run, not failed" node "$TEMPLATE/tools/sync_report.mjs" "$TMP/none" "$TARGETS" --stage gate=success --stage tag=success --stage plan=success --publish no
+has "  verified headline" "Verified (games are released by a manual run)"
+has "  games marked not run" "⏸ not run"
 mkdir -p "$TMP/good" && cp "$RES/fixture_old-one-pet.json" "$RES/fixture_current.json" "$TMP/good/"
-expect 0 "report passes when every game is ok" node "$TEMPLATE/tools/sync_report.mjs" "$TMP/good" '["fixture/old-one-pet","fixture/current"]'
-has "  all released headline" "All 2 game(s) released"
+expect 0 "report passes when every game is ok" node "$TEMPLATE/tools/sync_report.mjs" "$TMP/good" '["fixture/old-one-pet","fixture/current"]' --stage gate=success
+has "  all ok headline" "All 2 game(s) ok"
 
 echo
 echo "release tools: $pass passed, $failn failed"

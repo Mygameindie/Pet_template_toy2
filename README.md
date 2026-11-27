@@ -47,15 +47,19 @@ index.html        PER-GAME — page title + script list.
    this template AND on `Pet_template_toy2` with the new engine. If you also
    change `Pet_template_toy2` for it, use a branch with the **same name** there:
    the check then tests the two branches together.
-3. Merge. The **Release engine to games** workflow tests again, tags the
-   release `engine-v<version>`, and releases it to the games in
-   `sync_targets.txt`: one job per game, each tested with the new engine
-   before it is pushed. A game whose tests fail is not changed; the run shows
-   it as failed and the others still get the engine.
-4. `Pet_template_toy2` takes the release when you choose: on a branch, run
+3. Merge. The **Release engine to games** workflow tests again and publishes
+   the release tag `engine-v<version>`. A merge never writes to a game.
+4. Release it to this template's games by hand: Actions tab -> **Release
+   engine to games** -> Run workflow. First leave **Dry run** ticked: every
+   game in `sync_targets.txt` gets the new engine in a throw-away copy and is
+   smoke-tested; nothing is pushed. When the dry run is green, run it again
+   with Dry run unticked: one job per game, each tested again and pushed only
+   if its tests pass. A game whose tests fail is not changed; the run shows it
+   as failed and the others still get the engine.
+5. `Pet_template_toy2` takes the release when you choose: on a branch, run
    `git clone --branch engine-v<version> https://github.com/Mygameindie/Pet_template_toy ../engine-src`
    then `npm run engine:pull -- --from ../engine-src`, commit, open a pull
-   request, merge. Its release workflow then sends it to its games.
+   request, merge, then do step 4 in `Pet_template_toy2` for its games.
 
 Never edit `engine/` inside a game repo (Seafairycookiepet, Devilangelpet, Temu) or in
 `Pet_template_toy2`: the Engine check fails on a changed copy ("engine
@@ -66,14 +70,21 @@ drift"), and the next release overwrites it.
   A pull request into the default branch of `Pet_template_toy2` also needs
   its engine pinned to a release tag; a work branch may pin a branch of
   `Pet_template_toy` while both are being changed (a warning, not an error).
-- *Release engine to games*: the run summary has one row per game with its
-  engine version before and after, the test result and the outcome. A run by
-  hand is a dry run unless you untick it: it tests every game, pushes nothing.
+- *Release engine to games*: on a push to the default branch it only runs
+  the checks (and publishes the release tag in `Pet_template_toy`). Games are
+  written only by a manual run with Dry run unticked. The run summary lists
+  the stages (gate, tag, plan) and one row per game: engine before, candidate,
+  engine after this run (unchanged after a dry run or a failed push), smoke
+  tests and result. A failed stage or game fails the run, so a partial
+  release shows as a failed run.
 
 Run the tests yourself: `npm ci`, `npx playwright install chromium`, then
-`npm test` (`GAME_DIR=../<GameRepo> npm test` tests another game folder).
-`npm run engine:check` runs the drift check, `npm run test:tools` the release
-tools' own tests (local throw-away repos, no network, no token).
+`npm test` (`GAME_DIR=../<GameRepo> npm test` tests another game folder; the
+port follows the folder, `PORT=<n>` sets it). `npm run test:server` checks the
+test file server never serves anything outside the game folder or a dotfile
+(`.git`, `.env`). `npm run engine:check` runs the drift check,
+`npm run test:tools` the release tools' own tests (local throw-away repos, no
+network, a fake token that must not leak).
 
 Adding a new game to a family: add its `owner/repo` line to the template's
 `sync_targets.txt` (and give the sync token access to it, see below).
@@ -85,7 +96,10 @@ One-time setup for the automatic sync: create a GitHub fine-grained token
 (Settings → Developer settings → Fine-grained tokens) with
 **Contents: Read and write** on every game repo in `sync_targets.txt`, then
 add it to the template repo as an Actions secret named `ENGINE_SYNC_TOKEN`
-(template repo → Settings → Secrets and variables → Actions).
+(template repo → Settings → Secrets and variables → Actions). The workflow
+gives it only to the clone and push commands, as a header for github.com: it
+is never in a URL, in git config, in the tested game folder, or visible to
+the smoke tests. A dry run of public games works without it.
 
 **Content for ONE game** (characters, clothes, items, art):
 1. Edit that game's `game_config.js` / `outfit_config.js` / JSON files / `images/`.
