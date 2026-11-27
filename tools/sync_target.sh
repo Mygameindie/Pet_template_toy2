@@ -87,7 +87,9 @@ if [ "$RUN_TESTS" = "1" ]; then
   log "running smoke tests with engine $NEW_VERSION"
   # each game gets its own port so parallel runs on one machine don't clash
   PORT="$((4200 + $(printf '%s' "$REPO" | cksum | cut -d' ' -f1) % 700))"
-  if (cd "$TEMPLATE" && GAME_DIR="$DIR" PORT="$PORT" npx playwright test --reporter=line --output="$WORK/test-results-$SAFE"); then
+  GAME_PATH="$DIR"   # node on Windows (Git Bash) needs C:/... not /c/...
+  command -v cygpath >/dev/null 2>&1 && GAME_PATH="$(cygpath -m "$DIR")"
+  if (cd "$TEMPLATE" && GAME_DIR="$GAME_PATH" PORT="$PORT" npx playwright test --reporter=line --output="$WORK/test-results-$SAFE"); then
     TESTS="✅ passed"
   else
     TESTS="❌ failed"
